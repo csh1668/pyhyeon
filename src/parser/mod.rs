@@ -25,7 +25,6 @@ where
             }
             .labelled("literal"),
             ident
-                .clone()
                 .then(
                     expr.clone()
                         .separated_by(just(Token::Comma))
@@ -188,7 +187,7 @@ where
             );
 
         let def_stmt = just(Token::Def)
-            .ignore_then(ident.clone())
+            .ignore_then(ident)
             .then(
                 ident
                     .separated_by(just(Token::Comma))
@@ -210,9 +209,9 @@ where
             .ignore_then(expr.clone())
             .then(block.clone())
             .then(
-                (just(Token::Elif)
+                just(Token::Elif)
                     .ignore_then(expr.clone())
-                    .then(block.clone()))
+                    .then(block.clone())
                 .repeated()
                 .collect::<Vec<(ExprS, Vec<StmtS>)>>(),
             )
@@ -242,7 +241,6 @@ where
             .labelled("return statement");
 
         let assign_stmt = ident
-            .clone()
             .then_ignore(just(Token::Equal))
             .then(expr.clone())
             .then_ignore(line_end.clone())
@@ -258,7 +256,9 @@ where
         // Allow empty lines between statements
         let blank_lines = just(Token::Newline).ignored().repeated();
 
-        let stmt_node = choice((
+        
+
+        choice((
             def_stmt,
             if_stmt,
             while_stmt,
@@ -271,9 +271,7 @@ where
             let s: I::Span = e.span();
             (node, s.into_range())
         })
-        .labelled("statement");
-
-        stmt_node
+        .labelled("statement")
     })
     .boxed()
 }
