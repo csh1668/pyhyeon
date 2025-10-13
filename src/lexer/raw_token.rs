@@ -5,15 +5,24 @@ use logos::Logos;
 #[logos(skip r"#[^\n]*")]
 pub enum RawToken {
     // Keywords
-    #[token("if")] If,
-    #[token("elif")] Elif,
-    #[token("else")] Else,
-    #[token("while")] While,
-    #[token("def")] Def,
-    #[token("return")] Return,
-    #[token("and")] And,
-    #[token("or")] Or,
-    #[token("not")] Not,
+    #[token("if")]
+    If,
+    #[token("elif")]
+    Elif,
+    #[token("else")]
+    Else,
+    #[token("while")]
+    While,
+    #[token("def")]
+    Def,
+    #[token("return")]
+    Return,
+    #[token("and")]
+    And,
+    #[token("or")]
+    Or,
+    #[token("not")]
+    Not,
 
     // Identifiers and literals
     #[token("True", |_| true)]
@@ -25,24 +34,41 @@ pub enum RawToken {
     Identifier(String),
 
     // Operators and punctuation
-    #[token("+")] Plus,
-    #[token("-")] Minus,
-    #[token("*")] Star,
-    #[token("//")] SlashSlash,
-    #[token("%")] Percent,
-    #[token("==")] EqualEqual,
-    #[token("!=")] NotEqual,
-    #[token("<")] Less,
-    #[token("<=")] LessEqual,
-    #[token(">")] Greater,
-    #[token(">=")] GreaterEqual,
-    #[token("=")] Equal,
-    #[token("(")] LParen,
-    #[token(")")] RParen,
-    #[token(":")] Colon,
-    #[token(",")] Comma,
+    #[token("+")]
+    Plus,
+    #[token("-")]
+    Minus,
+    #[token("*")]
+    Star,
+    #[token("//")]
+    SlashSlash,
+    #[token("%")]
+    Percent,
+    #[token("==")]
+    EqualEqual,
+    #[token("!=")]
+    NotEqual,
+    #[token("<")]
+    Less,
+    #[token("<=")]
+    LessEqual,
+    #[token(">")]
+    Greater,
+    #[token(">=")]
+    GreaterEqual,
+    #[token("=")]
+    Equal,
+    #[token("(")]
+    LParen,
+    #[token(")")]
+    RParen,
+    #[token(":")]
+    Colon,
+    #[token(",")]
+    Comma,
 
-    #[token("\n")] Newline,
+    #[token("\n")]
+    Newline,
 }
 
 fn lex_integer(lexer: &mut logos::Lexer<RawToken>) -> Option<i64> {

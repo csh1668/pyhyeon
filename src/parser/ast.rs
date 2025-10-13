@@ -8,22 +8,43 @@ pub enum Literal {
 pub enum UnaryOp {
     Not,
     Negate,
+    Pos,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOp {
-    Add, Subtract, Multiply, FloorDivide, Modulo,
-    Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual,
-    And, Or,
+    Add,
+    Subtract,
+    Multiply,
+    FloorDivide,
+    Modulo,
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(Literal),
     Variable(String),
-    Unary { op: UnaryOp, expr: Box<Expr> },
-    Binary { op: BinaryOp, left: Box<Expr>, right: Box<Expr> },
-    Call { func_name: String, args: Vec<Expr> },
+    Unary {
+        op: UnaryOp,
+        expr: Box<Expr>,
+    },
+    Binary {
+        op: BinaryOp,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+    Call {
+        func_name: String,
+        args: Vec<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

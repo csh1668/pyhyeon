@@ -1,9 +1,10 @@
 mod lexer;
 mod parser;
+mod semantic;
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use chumsky::input::{Stream, Input};
 use chumsky::Parser;
+use chumsky::input::{Input, Stream};
 use chumsky::span::SimpleSpan;
 use lexer::Lexer;
 
@@ -43,6 +44,9 @@ fn main() {
     match parser::program_parser().parse(token_stream).into_result() {
         Ok(program) => {
             println!("Program: {:#?}", program);
+            if let Err(e) = semantic::analyze(&program) {
+                eprintln!("Semantic error: {}", e.message);
+            }
         }
         Err(errors) => {
             for e in errors {

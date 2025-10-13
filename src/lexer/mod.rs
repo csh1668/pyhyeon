@@ -1,11 +1,10 @@
 mod raw_token;
 pub mod token;
 
-
-use std::collections::VecDeque;
-use std::ops::Range;
 use logos::{Lexer as LogosLexer, Logos};
 use raw_token::RawToken;
+use std::collections::VecDeque;
+use std::ops::Range;
 pub(crate) use token::Token;
 
 pub struct Lexer<'source> {
@@ -74,7 +73,10 @@ impl<'source> Lexer<'source> {
     }
 
     fn handle_indentation(&mut self) {
-        assert!(self.at_start_of_line, "handle_indentation should be called at the start of a line");
+        assert!(
+            self.at_start_of_line,
+            "handle_indentation should be called at the start of a line"
+        );
         let line_start = self.inner.span().end; // last token was Newline
         let remainder = self.inner.remainder();
 
@@ -85,10 +87,13 @@ impl<'source> Lexer<'source> {
                 '\t' => {
                     // tab is not allowed
                     let tab_span = (line_start + current_indent)..(line_start + current_indent + 1);
-                    self.token_queue.push_back((Token::Error(
-                        "Tabs are not allowed for indentation.".to_string(),
-                        tab_span.clone()
-                    ), tab_span));
+                    self.token_queue.push_back((
+                        Token::Error(
+                            "Tabs are not allowed for indentation.".to_string(),
+                            tab_span.clone(),
+                        ),
+                        tab_span,
+                    ));
                 }
                 _ => break,
             }
@@ -113,24 +118,33 @@ impl<'source> Lexer<'source> {
             // Same level, do nothing
         } else if current_indent > last_indent {
             if current_indent != last_indent + 2 {
-                self.token_queue.push_back((Token::Error(
-                    format!("Invalid indentation: expected {} spaces, but got {}.", last_indent + 2, current_indent),
-                    indent_span.clone()
-                ), indent_span));
+                self.token_queue.push_back((
+                    Token::Error(
+                        format!(
+                            "Invalid indentation: expected {} spaces, but got {}.",
+                            last_indent + 2,
+                            current_indent
+                        ),
+                        indent_span.clone(),
+                    ),
+                    indent_span,
+                ));
             } else {
                 self.indent_stack.push(current_indent);
                 self.token_queue.push_back((Token::Indent, indent_span));
             }
-        } else { // current_indent < last_indent
+        } else {
+            // current_indent < last_indent
             while current_indent < *self.indent_stack.last().unwrap_or(&0) {
                 self.indent_stack.pop();
-                self.token_queue.push_back((Token::Dedent, indent_span.clone()));
+                self.token_queue
+                    .push_back((Token::Dedent, indent_span.clone()));
             }
             if current_indent != *self.indent_stack.last().unwrap_or(&0) {
-                self.token_queue.push_back((Token::Error(
-                    "Invalid dedentation.".to_string(),
-                    indent_span.clone()
-                ), indent_span));
+                self.token_queue.push_back((
+                    Token::Error("Invalid dedentation.".to_string(), indent_span.clone()),
+                    indent_span,
+                ));
             }
         }
     }
@@ -169,7 +183,6 @@ impl<'source> Lexer<'source> {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

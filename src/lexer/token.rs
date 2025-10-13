@@ -1,19 +1,45 @@
-use std::ops::Range;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Keywords
-    If, Elif, Else, While, Def, Return, And, Or, Not,
+    If,
+    Elif,
+    Else,
+    While,
+    Def,
+    Return,
+    And,
+    Or,
+    Not,
     // Identifiers and literals
-    Bool(bool), Int(i64), Identifier(String),
+    Bool(bool),
+    Int(i64),
+    Identifier(String),
     // Operators and punctuation
-    Plus, Minus, Star, SlashSlash, Percent,
-    EqualEqual, NotEqual, Less, LessEqual, Greater, GreaterEqual, Equal,
-    LParen, RParen, Colon, Comma,
+    Plus,
+    Minus,
+    Star,
+    SlashSlash,
+    Percent,
+    EqualEqual,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    Equal,
+    LParen,
+    RParen,
+    Colon,
+    Comma,
     // Special tokens
-    Indent, Dedent, Newline, Eof,
-    
+    Indent,
+    Dedent,
+    Newline,
+    Eof,
+
     Error(String, Range<usize>),
 }
 
