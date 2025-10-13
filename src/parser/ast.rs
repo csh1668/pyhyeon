@@ -1,3 +1,8 @@
+pub use crate::types::Spanned;
+
+pub type StmtS = Spanned<Stmt>;
+pub type ExprS = Spanned<Expr>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Bool(bool),
@@ -34,40 +39,40 @@ pub enum Expr {
     Variable(String),
     Unary {
         op: UnaryOp,
-        expr: Box<Expr>,
+        expr: Box<ExprS>,
     },
     Binary {
         op: BinaryOp,
-        left: Box<Expr>,
-        right: Box<Expr>,
+        left: Box<ExprS>,
+        right: Box<ExprS>,
     },
     Call {
         func_name: String,
-        args: Vec<Expr>,
+        args: Vec<ExprS>,
     },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     If {
-        condition: Expr,
-        then_block: Vec<Stmt>,
-        elif_blocks: Vec<(Expr, Vec<Stmt>)>,
-        else_block: Option<Vec<Stmt>>,
+        condition: ExprS,
+        then_block: Vec<StmtS>,
+        elif_blocks: Vec<(ExprS, Vec<StmtS>)>,
+        else_block: Option<Vec<StmtS>>,
     },
     While {
-        condition: Expr,
-        body: Vec<Stmt>,
+        condition: ExprS,
+        body: Vec<StmtS>,
     },
     Def {
         name: String,
         params: Vec<String>,
-        body: Vec<Stmt>,
+        body: Vec<StmtS>,
     },
-    Return(Expr), // TODO: If 'None' is added to Literal, change to Option<Expr>
+    Return(ExprS), // TODO: If 'None' is added to Literal, change to Option<ExprS>
     Assign {
         name: String,
-        value: Expr,
+        value: ExprS,
     },
-    Expr(Expr),
+    Expr(ExprS),
 }

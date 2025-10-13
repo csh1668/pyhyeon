@@ -1,6 +1,7 @@
 pub(crate) mod ast;
 
 use crate::lexer::Token;
+use crate::types::Span;
 use ast::*;
 use chumsky::Parser;
 use chumsky::input::ValueInput;
@@ -10,7 +11,7 @@ pub use chumsky::span::SimpleSpan;
 
 type RichError<'a> = Rich<'a, Token>;
 
-pub fn expr_parser<'tokens, I>() -> impl Parser<'tokens, I, Expr, extra::Err<RichError<'tokens>>>
+pub fn expr_parser<'tokens, I>() -> impl Parser<'tokens, I, ExprS, extra::Err<RichError<'tokens>>>
 where
     I: ValueInput<'tokens, Token = Token, Span = SimpleSpan> + 'tokens,
 {
@@ -35,18 +36,38 @@ where
                 .map(|(func_name, args)| Expr::Call { func_name, args }),
             ident.map(Expr::Variable),
             expr.clone()
-                .delimited_by(just(Token::LParen), just(Token::RParen)),
-        ));
+                .delimited_by(just(Token::LParen), just(Token::RParen))
+                .map(|e| e.0), // take inner expr node; span will be overwritten below
+        ))
+        .map_with(|node: Expr, e| {
+            let s: I::Span = e.span();
+            (node, s.into_range())
+        });
 
-        let unary = just(Token::Not)
-            .to(UnaryOp::Not)
-            .or(just(Token::Minus).to(UnaryOp::Negate))
-            .or(just(Token::Plus).to(UnaryOp::Pos))
-            .repeated()
-            .foldr(atom, |op, right| Expr::Unary {
-                op,
-                expr: Box::new(right),
-            });
+        // Capture unary operator with its span
+        let op_unary = choice((
+            just(Token::Not).to(UnaryOp::Not),
+            just(Token::Minus).to(UnaryOp::Negate),
+            just(Token::Plus).to(UnaryOp::Pos),
+        ))
+        .map_with(|op, e| {
+            let s: I::Span = e.span();
+            (op, s.into_range())
+        });
+
+        let unary =
+            op_unary
+                .repeated()
+                .foldr(atom, |(op, op_span): (UnaryOp, Span), right: ExprS| {
+                    let span = op_span.start..right.1.end;
+                    (
+                        Expr::Unary {
+                            op,
+                            expr: Box::new(right),
+                        },
+                        span,
+                    )
+                });
 
         let op = |t| just(t).ignored();
         let product = unary.clone().foldl(
@@ -57,10 +78,16 @@ where
             ))
             .then(unary)
             .repeated(),
-            |left, (op, right)| Expr::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
+            |left: ExprS, (op, right): (BinaryOp, ExprS)| {
+                let span = left.1.start..right.1.end;
+                (
+                    Expr::Binary {
+                        op,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                    span,
+                )
             },
         );
         let sum = product.clone().foldl(
@@ -70,10 +97,16 @@ where
             ))
             .then(product)
             .repeated(),
-            |left, (op, right)| Expr::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
+            |left: ExprS, (op, right): (BinaryOp, ExprS)| {
+                let span = left.1.start..right.1.end;
+                (
+                    Expr::Binary {
+                        op,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                    span,
+                )
             },
         );
         let comparison = sum.clone().foldl(
@@ -87,26 +120,44 @@ where
             ))
             .then(sum)
             .repeated(),
-            |left, (op, right)| Expr::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
+            |left: ExprS, (op, right): (BinaryOp, ExprS)| {
+                let span = left.1.start..right.1.end;
+                (
+                    Expr::Binary {
+                        op,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                    span,
+                )
             },
         );
         let and_expr = comparison.clone().foldl(
             op(Token::And).to(BinaryOp::And).then(comparison).repeated(),
-            |left, (op, right)| Expr::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
+            |left: ExprS, (op, right): (BinaryOp, ExprS)| {
+                let span = left.1.start..right.1.end;
+                (
+                    Expr::Binary {
+                        op,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                    span,
+                )
             },
         );
         let or_expr = and_expr.clone().foldl(
             op(Token::Or).to(BinaryOp::Or).then(and_expr).repeated(),
-            |left, (op, right)| Expr::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
+            |left: ExprS, (op, right): (BinaryOp, ExprS)| {
+                let span = left.1.start..right.1.end;
+                (
+                    Expr::Binary {
+                        op,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                    span,
+                )
             },
         );
 
@@ -115,7 +166,7 @@ where
     .boxed()
 }
 
-pub fn stmt_parser<'tokens, I>() -> impl Parser<'tokens, I, Stmt, extra::Err<RichError<'tokens>>>
+pub fn stmt_parser<'tokens, I>() -> impl Parser<'tokens, I, StmtS, extra::Err<RichError<'tokens>>>
 where
     I: ValueInput<'tokens, Token = Token, Span = SimpleSpan> + 'tokens,
 {
@@ -125,12 +176,16 @@ where
         let ident = select! { Token::Identifier(s) => s }.labelled("identifier");
 
         // Helper: parse a block after a ':'
-        let block = stmt.clone().repeated().collect().delimited_by(
-            just(Token::Colon)
-                .ignore_then(just(Token::Newline))
-                .ignore_then(just(Token::Indent)),
-            just(Token::Dedent),
-        );
+        let block = stmt
+            .clone()
+            .repeated()
+            .collect::<Vec<StmtS>>()
+            .delimited_by(
+                just(Token::Colon)
+                    .ignore_then(just(Token::Newline))
+                    .ignore_then(just(Token::Indent)),
+                just(Token::Dedent),
+            );
 
         let def_stmt = just(Token::Def)
             .ignore_then(ident.clone())
@@ -142,7 +197,13 @@ where
                     .delimited_by(just(Token::LParen), just(Token::RParen)),
             )
             .then(block.clone())
-            .map(|((name, params), body)| Stmt::Def { name, params, body })
+            .map(
+                |((name, params), body): ((String, Vec<String>), Vec<StmtS>)| Stmt::Def {
+                    name,
+                    params,
+                    body,
+                },
+            )
             .labelled("def statement");
 
         let if_stmt = just(Token::If)
@@ -153,7 +214,7 @@ where
                     .ignore_then(expr.clone())
                     .then(block.clone()))
                 .repeated()
-                .collect(),
+                .collect::<Vec<(ExprS, Vec<StmtS>)>>(),
             )
             .then(just(Token::Else).ignore_then(block.clone()).or_not())
             .map(
@@ -172,7 +233,7 @@ where
             .map(|(condition, body)| Stmt::While { condition, body })
             .labelled("while statement");
 
-        let line_end = just(Token::Newline).ignored().or(end().ignored()).or(just(Token::Eof).ignored());
+        let line_end = just(Token::Newline).ignored().or(end().ignored());
 
         let return_stmt = just(Token::Return)
             .ignore_then(expr.clone())
@@ -197,7 +258,7 @@ where
         // Allow empty lines between statements
         let blank_lines = just(Token::Newline).ignored().repeated();
 
-        choice((
+        let stmt_node = choice((
             def_stmt,
             if_stmt,
             while_stmt,
@@ -206,13 +267,19 @@ where
             expr_stmt,
         ))
         .padded_by(blank_lines)
-        .labelled("statement")
+        .map_with(|node: Stmt, e| {
+            let s: I::Span = e.span();
+            (node, s.into_range())
+        })
+        .labelled("statement");
+
+        stmt_node
     })
     .boxed()
 }
 
 pub fn program_parser<'tokens, I>()
--> impl Parser<'tokens, I, Vec<Stmt>, extra::Err<RichError<'tokens>>>
+-> impl Parser<'tokens, I, Vec<StmtS>, extra::Err<RichError<'tokens>>>
 where
     I: ValueInput<'tokens, Token = Token, Span = SimpleSpan> + 'tokens,
 {

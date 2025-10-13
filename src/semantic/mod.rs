@@ -1,16 +1,18 @@
 pub mod scope;
 pub mod typecheck;
 
-use crate::parser::ast::{Expr, Stmt};
+use crate::parser::ast::{Expr, ExprS, Stmt, StmtS};
+use crate::types::Span;
 
 #[derive(Debug)]
 pub struct SemanticError {
     pub message: String,
+    pub span: Span,
 }
 
 pub type SemanticResult<T> = Result<T, SemanticError>;
 
-pub fn analyze(program: &[Stmt]) -> SemanticResult<()> {
+pub fn analyze(program: &[StmtS]) -> SemanticResult<()> {
     // Skeleton: wire up passes here (scope resolution → type checks)
     let mut scope = scope::ScopeStack::new();
     for stmt in program {
@@ -19,8 +21,8 @@ pub fn analyze(program: &[Stmt]) -> SemanticResult<()> {
     Ok(())
 }
 
-fn analyze_stmt(stmt: &Stmt, scopes: &mut scope::ScopeStack) -> SemanticResult<()> {
-    match stmt {
+fn analyze_stmt(stmt: &StmtS, scopes: &mut scope::ScopeStack) -> SemanticResult<()> {
+    match &stmt.0 {
         Stmt::Def { name, params, body } => {
             scopes.define(name.clone());
             scopes.push();
@@ -83,23 +85,30 @@ fn analyze_stmt(stmt: &Stmt, scopes: &mut scope::ScopeStack) -> SemanticResult<(
     }
 }
 
-fn analyze_expr(expr: &Expr, scopes: &mut scope::ScopeStack) -> SemanticResult<()> {
-    match expr {
+fn analyze_expr(expr: &ExprS, scopes: &mut scope::ScopeStack) -> SemanticResult<()> {
+    match &expr.0 {
         Expr::Literal(_) => Ok(()),
         Expr::Variable(name) => {
             if !scopes.is_defined(name) {
                 return Err(SemanticError {
                     message: format!("Undefined variable: {}", name),
+                    span: expr.1.clone(),
                 });
             }
             Ok(())
         }
-        Expr::Unary { op: _, expr } => analyze_expr(expr, scopes),
+        Expr::Unary { op: _, expr: inner } => analyze_expr(inner, scopes),
         Expr::Binary { op: _, left, right } => {
             analyze_expr(left, scopes)?;
             analyze_expr(right, scopes)
         }
-        Expr::Call { func_name: _, args } => {
+        Expr::Call { func_name, args } => {
+            if !scopes.is_defined(func_name) {
+                return Err(SemanticError {
+                    message: format!("Undefined function: {}", func_name),
+                    span: expr.1.clone(),
+                });
+            }
             for a in args {
                 analyze_expr(a, scopes)?;
             }

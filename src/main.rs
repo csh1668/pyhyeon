@@ -1,6 +1,7 @@
 mod lexer;
 mod parser;
 mod semantic;
+mod types;
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::Parser;
@@ -38,29 +39,41 @@ fn main() {
         Some((t, SimpleSpan::new(span.start, span.end)))
     });
 
-    let eoi_span = parser::SimpleSpan::new(0, src.len());
+    // end of input span
+    let eoi_span = parser::SimpleSpan::new(src.len(), src.len());
     let token_stream = Stream::from_iter(token_iter).map(eoi_span, |(t, s)| (t, s));
 
     match parser::program_parser().parse(token_stream).into_result() {
         Ok(program) => {
             println!("Program: {:#?}", program);
             if let Err(e) = semantic::analyze(&program) {
-                eprintln!("Semantic error: {}", e.message);
+                Report::build(ReportKind::Error, (path, e.span.clone()))
+                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
+                    .with_code(4)
+                    .with_message(e.message.clone())
+                    .with_label(
+                        Label::new((path, e.span.clone()))
+                            .with_message(e.message)
+                            .with_color(Color::Red),
+                    )
+                    .finish()
+                    .eprint((path, Source::from(&src)))
+                    .unwrap();
             }
         }
         Err(errors) => {
             for e in errors {
-                Report::build(ReportKind::Error, ((), e.span().into_range()))
+                Report::build(ReportKind::Error, (path, e.span().into_range()))
                     .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
                     .with_code(3)
                     .with_message(e.reason().to_string())
                     .with_label(
-                        Label::new(((), e.span().into_range()))
+                        Label::new((path, e.span().into_range()))
                             .with_message(e.reason().to_string())
                             .with_color(Color::Red),
                     )
                     .finish()
-                    .eprint(Source::from(&src))
+                    .eprint((path, Source::from(&src)))
                     .unwrap();
             }
         }
