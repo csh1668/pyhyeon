@@ -172,7 +172,7 @@ where
             .map(|(condition, body)| Stmt::While { condition, body })
             .labelled("while statement");
 
-        let line_end = just(Token::Newline).ignored().or(end().ignored());
+        let line_end = just(Token::Newline).ignored().or(end().ignored()).or(just(Token::Eof).ignored());
 
         let return_stmt = just(Token::Return)
             .ignore_then(expr.clone())
