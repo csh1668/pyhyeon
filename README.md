@@ -2,6 +2,8 @@
 
 This repository implements a small Python subset language (lexer, parser, semantic analyzer), an interpreter, a bytecode compiler, and a simple VM.
 
+**🎮 [Try the Playground](https://csh1668.github.io/pyhyeon/)**
+
 ```py
 def add(a, b):
   return a + b
