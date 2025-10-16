@@ -37,24 +37,22 @@ fn main() {
 
     match subcmd.as_str() {
         "run" => {
-            if let Ok(program) = lib::parse_source(path, &src) {
-                if lib::analyze(&program, path, &src) {
+            if let Ok(program) = lib::parse_source(path, &src)
+                && lib::analyze(&program, path, &src) {
                     match engine.as_str() {
                         "vm" => { let module = lib::compile_to_module(&program); lib::exec_vm_module(module); }
                         _ => { lib::run_interpreter(&program, path, &src); }
                     }
                 }
-            }
         }
         "compile" => {
-            if let Ok(program) = lib::parse_source(path, &src) {
-                if lib::analyze(&program, path, &src) {
+            if let Ok(program) = lib::parse_source(path, &src)
+                && lib::analyze(&program, path, &src) {
                     let module = lib::compile_to_module(&program);
                     let out = out_path.as_deref().unwrap_or("out.pyhb");
                     lib::save_module(&module, out).expect("failed to save module");
                     println!("wrote {}", out);
                 }
-            }
         }
         "exec" => {
             let module = lib::load_module(path).expect("failed to load module");

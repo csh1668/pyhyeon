@@ -214,19 +214,17 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                     "bool" => { let _ = tc_expr(&args[0], tenv, ctx)?; Ok(Ty::Bool) }
                     _ => Ok(Ty::Unknown),
                 }
-            } else {
-                if let Some(expected) = ctx.functions.get(func_name) {
-                    if *expected != args.len() {
-                        return Err(SemanticError { message: format!(
-                            "ArityError: function '{}' takes {} positional arguments but {} were given",
-                            func_name, expected, args.len()
-                        ), span: expr.1.clone() });
-                    }
-                    for a in args { let _ = tc_expr(a, tenv, ctx)?; }
-                    Ok(Ty::Unknown)
-                } else {
-                    Err(SemanticError { message: format!("Undefined function: {}", func_name), span: expr.1.clone() })
+            } else if let Some(expected) = ctx.functions.get(func_name) {
+                if *expected != args.len() {
+                    return Err(SemanticError { message: format!(
+                        "ArityError: function '{}' takes {} positional arguments but {} were given",
+                        func_name, expected, args.len()
+                    ), span: expr.1.clone() });
                 }
+                for a in args { let _ = tc_expr(a, tenv, ctx)?; }
+                Ok(Ty::Unknown)
+            } else {
+                Err(SemanticError { message: format!("Undefined function: {}", func_name), span: expr.1.clone() })
             }
         }
     }

@@ -58,6 +58,12 @@ pub struct Interpreter {
     pub env: Env,
 }
 
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Interpreter {
     pub fn new() -> Self {
         let mut env = Env::new();
@@ -190,7 +196,7 @@ impl Interpreter {
                 return Ok(Value::None);
             }
             "input" => {
-                if args.len() != 0 { return Err(RuntimeError { message: format!("ArityError: input() takes 0 positional arguments but {} given", args.len()), span: call_span.clone() }); }
+                if !args.is_empty() { return Err(RuntimeError { message: format!("ArityError: input() takes 0 positional arguments but {} given", args.len()), span: call_span.clone() }); }
                 // Simple line-based input (reads one line)
                 use std::io::{self, Read};
                 let mut buf = String::new();

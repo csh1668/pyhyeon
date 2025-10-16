@@ -16,8 +16,7 @@ static REGISTRY: &[Builtin] = &[PRINT, INPUT, INT, BOOL];
 pub fn all() -> &'static [Builtin] { REGISTRY }
 
 pub fn lookup(name: &str) -> Option<&'static Builtin> {
-    for b in REGISTRY { if b.name == name { return Some(b); } }
-    None
+    REGISTRY.iter().find(|&b| b.name == name).map(|v| v as _)
 }
 
 // pub struct Builtin {

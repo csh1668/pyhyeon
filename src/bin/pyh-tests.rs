@@ -7,7 +7,7 @@ use std::time::Instant;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let filter = args.get(0).map(|s| s.as_str());
+    let filter = args.first().map(|s| s.as_str());
     let dir = Path::new("tests/programs");
     if !dir.exists() {
         eprintln!("tests/programs not found.");
@@ -21,7 +21,7 @@ fn main() -> io::Result<()> {
     entries.sort();
 
     for path in entries {
-        if let Some(f) = filter { if !path.to_string_lossy().contains(f) { continue; } }
+        if let Some(f) = filter && !path.to_string_lossy().contains(f) { continue; }
         let path_str = path.to_string_lossy().to_string();
         println!("==== [{}] ====", path_str);
         let mut src = fs::read_to_string(&path_str)?;
@@ -50,7 +50,7 @@ fn main() -> io::Result<()> {
                 eprintln!("Parse error: {}", path_str);
             }
         }
-        println!("");
+        println!();
     }
 
     Ok(())
