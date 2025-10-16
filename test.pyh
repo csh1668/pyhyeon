@@ -1,6 +1,8 @@
-def add(x, y):
+def f():
+  x = 1
+  if True:
+    y = 2
   return x + y
 
-a = 1
-b = 2
-c = add(a,b)
+a = None
+print(f())

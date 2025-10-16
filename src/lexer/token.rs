@@ -14,6 +14,7 @@ pub enum Token {
     Or,
     Not,
     // Identifiers and literals
+    None,
     Bool(bool),
     Int(i64),
     Identifier(String),
@@ -34,6 +35,7 @@ pub enum Token {
     RParen,
     Colon,
     Comma,
+    Semicolon,
     // Special tokens
     Indent,
     Dedent,
@@ -58,6 +60,7 @@ impl Display for Token {
             Token::Not => write!(f, "not"),
 
             // Identifiers and literals
+            Token::None => write!(f, "None"),
             Token::Bool(true) => write!(f, "True"),
             Token::Bool(false) => write!(f, "False"),
             Token::Int(i) => write!(f, "{}", i),
@@ -80,6 +83,7 @@ impl Display for Token {
             Token::RParen => write!(f, ")"),
             Token::Colon => write!(f, ":"),
             Token::Comma => write!(f, ","),
+            Token::Semicolon => write!(f, ";"),
 
             // Special tokens
             Token::Indent => write!(f, "<INDENT>"),

@@ -1,81 +1,68 @@
-mod lexer;
-mod parser;
-mod semantic;
-mod types;
-
-use ariadne::{Color, Label, Report, ReportKind, Source};
-use chumsky::Parser;
-use chumsky::input::{Input, Stream};
-use chumsky::span::SimpleSpan;
-use lexer::Lexer;
+use pyhyeon as lib;
+use std::env;
 
 fn main() {
-    let path = "./test.pyh";
-    let src = std::fs::read_to_string(path).expect("Failed to read source file");
-
-    let mut lexer = Lexer::new(src.as_str());
-    let mut tokens = vec![];
-    loop {
-        let t = lexer.next_token();
-        if t == lexer::token::Token::Eof {
-            break;
-        }
-        tokens.push(t);
+    // engine selection: default interpreter; override with --engine=vm or --engine=interp
+    let mut engine = String::from("interp");
+    for arg in env::args().skip(1) {
+        if arg == "--engine=vm" { engine = "vm".into(); }
+        if arg == "--engine=interp" { engine = "interp".into(); }
     }
-    println!("Tokens: {:#?}", tokens);
-
-    let mut lexer = Lexer::new(src.as_str());
-
-    let mut reached_eof = false;
-    let token_iter = std::iter::from_fn(move || {
-        if reached_eof {
-            return None;
+    // subcommands per plan.md: run/repl/compile/exec (minimal: run/compile/exec)
+    // Usage examples:
+    //   pyh run program.pyh [--engine=vm|interp]
+    //   pyh compile program.pyh -o out.pyhb
+    //   pyh exec out.pyhb
+    let mut args = env::args().skip(1).collect::<Vec<String>>();
+    let mut subcmd = "run".to_string();
+    let mut input_path = "./test.pyh".to_string();
+    let mut out_path: Option<String> = None;
+    if !args.is_empty() {
+        let first = &args[0];
+        if ["run","compile","exec","repl"].contains(&first.as_str()) { subcmd = first.clone(); args.remove(0); }
+    }
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            s if s.starts_with("--engine=") => { /* already handled */ }
+            "-o" => { if i+1 < args.len() { out_path = Some(args[i+1].clone()); i+=1; } }
+            p => { input_path = p.to_string(); }
         }
-        let (t, span) = lexer.next_token_with_span();
-        if t == lexer::token::Token::Eof {
-            reached_eof = true;
-            return None; // Do not include EOF token in the parser stream
-        }
-        Some((t, SimpleSpan::new(span.start, span.end)))
-    });
+        i+=1;
+    }
+    let path = input_path.as_str();
+    let src = std::fs::read_to_string(path).expect("Failed to read source file");
+    // add newline if not present at the end of file
+    let src = if src.ends_with('\n') { src } else { format!("{}\n", src) };
 
-    // end of input span
-    let eoi_span = parser::SimpleSpan::new(src.len(), src.len());
-    let token_stream = Stream::from_iter(token_iter).map(eoi_span, |(t, s)| (t, s));
-
-    match parser::program_parser().parse(token_stream).into_result() {
-        Ok(program) => {
-            println!("Program: {:#?}", program);
-            if let Err(e) = semantic::analyze(&program) {
-                Report::build(ReportKind::Error, (path, e.span.clone()))
-                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                    .with_code(4)
-                    .with_message(e.message.clone())
-                    .with_label(
-                        Label::new((path, e.span.clone()))
-                            .with_message(e.message)
-                            .with_color(Color::Red),
-                    )
-                    .finish()
-                    .eprint((path, Source::from(&src)))
-                    .unwrap();
+    match subcmd.as_str() {
+        "run" => {
+            if let Ok(program) = lib::parse_source(path, &src) {
+                if lib::analyze(&program, path, &src) {
+                    match engine.as_str() {
+                        "vm" => { let module = lib::compile_to_module(&program); lib::exec_vm_module(module); }
+                        _ => { lib::run_interpreter(&program, path, &src); }
+                    }
+                }
             }
         }
-        Err(errors) => {
-            for e in errors {
-                Report::build(ReportKind::Error, (path, e.span().into_range()))
-                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                    .with_code(3)
-                    .with_message(e.reason().to_string())
-                    .with_label(
-                        Label::new((path, e.span().into_range()))
-                            .with_message(e.reason().to_string())
-                            .with_color(Color::Red),
-                    )
-                    .finish()
-                    .eprint((path, Source::from(&src)))
-                    .unwrap();
+        "compile" => {
+            if let Ok(program) = lib::parse_source(path, &src) {
+                if lib::analyze(&program, path, &src) {
+                    let module = lib::compile_to_module(&program);
+                    let out = out_path.as_deref().unwrap_or("out.pyhb");
+                    lib::save_module(&module, out).expect("failed to save module");
+                    println!("wrote {}", out);
+                }
             }
         }
-    };
+        "exec" => {
+            let module = lib::load_module(path).expect("failed to load module");
+            lib::exec_vm_module(module);
+        }
+        "repl" => {
+            eprintln!("REPL is not implemented yet.");
+        }
+        _ => {}
+    }
 }

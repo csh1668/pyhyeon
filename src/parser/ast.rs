@@ -7,6 +7,7 @@ pub type ExprS = Spanned<Expr>;
 pub enum Literal {
     Bool(bool),
     Int(i64),
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -69,7 +70,7 @@ pub enum Stmt {
         params: Vec<String>,
         body: Vec<StmtS>,
     },
-    Return(ExprS), // TODO: If 'None' is added to Literal, change to Option<ExprS>
+    Return(ExprS),
     Assign {
         name: String,
         value: ExprS,

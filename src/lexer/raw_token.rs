@@ -25,6 +25,8 @@ pub enum RawToken {
     Not,
 
     // Identifiers and literals
+    #[token("None")]
+    None,
     #[token("True", |_| true)]
     #[token("False", |_| false)]
     Bool(bool),
@@ -66,6 +68,8 @@ pub enum RawToken {
     Colon,
     #[token(",")]
     Comma,
+    #[token(";")]
+    Semicolon,
 
     #[token("\n")]
     Newline,

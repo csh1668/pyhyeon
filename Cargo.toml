@@ -8,3 +8,5 @@ edition = "2024"
 logos = "0.15.1"
 chumsky = "1.0.0-alpha.8"
 ariadne = "0.5.1"
+serde = { version = "1.0", features = ["derive"] }
+bincode = "1.3"

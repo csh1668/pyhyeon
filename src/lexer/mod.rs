@@ -151,6 +151,7 @@ impl<'source> Lexer<'source> {
 
     fn convert_token(raw: RawToken) -> Token {
         match raw {
+            RawToken::None => Token::None,
             RawToken::If => Token::If,
             RawToken::Elif => Token::Elif,
             RawToken::Else => Token::Else,
@@ -179,7 +180,9 @@ impl<'source> Lexer<'source> {
             RawToken::RParen => Token::RParen,
             RawToken::Colon => Token::Colon,
             RawToken::Comma => Token::Comma,
+            RawToken::Semicolon => Token::Semicolon,
             RawToken::Newline => Token::Newline,
+            _ => unreachable!("unhandled RawToken variant"),
         }
     }
 }
@@ -233,6 +236,56 @@ def factorial(n):
             Token::RParen,
             Token::Newline,
             Token::Dedent,
+            Token::Dedent,
+            Token::Eof,
+        ];
+        for expected in expected_tokens {
+            let token = lexer.next_token();
+            assert_eq!(token, expected);
+        }
+    }
+
+    #[test]
+    fn two_functions() {
+        let source = "\
+def add(a, b):
+  return a + b
+def sub(a, b):
+  return a - b
+";
+        let mut lexer = Lexer::new(source);
+        let expected_tokens = vec![
+            Token::Def,
+            Token::Identifier("add".to_string()),
+            Token::LParen,
+            Token::Identifier("a".to_string()),
+            Token::Comma,
+            Token::Identifier("b".to_string()),
+            Token::RParen,
+            Token::Colon,
+            Token::Newline,
+            Token::Indent,
+            Token::Return,
+            Token::Identifier("a".to_string()),
+            Token::Plus,
+            Token::Identifier("b".to_string()),
+            Token::Newline,
+            Token::Dedent,
+            Token::Def,
+            Token::Identifier("sub".to_string()),
+            Token::LParen,
+            Token::Identifier("a".to_string()),
+            Token::Comma,
+            Token::Identifier("b".to_string()),
+            Token::RParen,
+            Token::Colon,
+            Token::Newline,
+            Token::Indent,
+            Token::Return,
+            Token::Identifier("a".to_string()),
+            Token::Minus,
+            Token::Identifier("b".to_string()),
+            Token::Newline,
             Token::Dedent,
             Token::Eof,
         ];
