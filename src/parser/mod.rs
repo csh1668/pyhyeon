@@ -218,7 +218,9 @@ where
             .collect::<Vec<Vec<StmtS>>>()
             .map(|lines| lines.into_iter().flatten().collect::<Vec<StmtS>>())
             .delimited_by(
-                just(Token::Newline).ignore_then(just(Token::Indent)),
+                just(Token::Newline)
+                    .ignore_then(just(Token::Newline).ignored().repeated())
+                    .ignore_then(just(Token::Indent)),
                 just(Token::Dedent),
             );
 

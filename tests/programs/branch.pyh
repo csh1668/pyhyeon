@@ -1,0 +1,12 @@
+def f(x):
+  if x < 0:
+    return -1
+  elif x == 0:
+    return 0
+  else:
+    return 1
+
+print(f(-3))
+print(f(0))
+print(f(7))
+

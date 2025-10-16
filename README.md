@@ -1,6 +1,6 @@
 ## PyHyeon: a subset language of Python
 
-This repository includes a lexer and a parser. The interpreter, compiler, and VM are under development.
+This repository implements a small Python subset language (lexer, parser, semantic analyzer), an interpreter, a bytecode compiler, and a simple VM.
 
 ```py
 def add(a, b):
@@ -13,8 +13,27 @@ y = add(x, 1)
 ### Requirements
 - Rust toolchain with the 2024 edition (Rust 1.84+)
 
-### Run
+### Build
 ```bash
-cargo run
+cargo build
 ```
-Reads `./test.pyh` and prints tokens and the AST to the terminal.
+
+### CLI
+- `run`: parse → analyze → execute (interpreter by default)
+- `compile`: parse → analyze → compile to bytecode file (`.pyhb`)
+- `exec`: execute a compiled bytecode file on the VM
+
+#### Examples
+```bash
+# Run with interpreter
+cargo run -- run ./test.pyh
+
+# Run with VM
+cargo run -- run ./test.pyh --engine=vm
+
+# Compile to bytecode (out.pyhb)
+cargo run -- compile ./test.pyh -o out.pyhb
+
+# Execute bytecode on VM
+cargo run -- exec ./out.pyhb
+```
