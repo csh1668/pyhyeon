@@ -2,6 +2,8 @@
 #![allow(unused_variables)]
 
 use super::bytecode::{Instruction as I, Module, Value, BUILTIN_BOOL_ID, BUILTIN_INPUT_ID, BUILTIN_INT_ID, BUILTIN_PRINT_ID};
+use crate::runtime_io::RuntimeIo;
+use std::collections::VecDeque;
 
 #[derive(Debug)]
 pub enum VmErrorKind {
@@ -36,12 +38,25 @@ pub struct Vm {
     pub frames: Vec<Frame>,
     pub max_stack: usize,
     pub max_frames: usize,
+    // When present, capture output from builtins like print instead of writing to stdout
+    pub out: Option<String>,
+    // Optional queued input lines consumed by input() builtin (web/interactive)
+    pub input: VecDeque<String>,
 }
 
 impl Vm {
     pub fn new() -> Self {
-        Self { stack: Vec::with_capacity(128), frames: Vec::with_capacity(32), max_stack: 1024, max_frames: 256 }
+        Self { stack: Vec::with_capacity(128), frames: Vec::with_capacity(32), max_stack: 1024, max_frames: 256, out: None, input: VecDeque::new() }
     }
+
+    /// Enable capturing of printed output into an internal buffer (used by Web/WASM)
+    pub fn enable_capture(&mut self) { self.out = Some(String::new()); }
+
+    /// Take and clear the captured output buffer
+    pub fn take_output(&mut self) -> Option<String> { self.out.take() }
+
+    /// Push a line of input to be consumed by input() builtin
+    pub fn push_input_line<S: Into<String>>(&mut self, line: S) { self.input.push_back(line.into()); }
 
     pub fn run(&mut self, module: &mut Module) -> VmResult<Option<Value>> {
         if module.functions.is_empty() { return Ok(None); }
@@ -101,16 +116,24 @@ impl Vm {
                     match bid {
                         BUILTIN_PRINT_ID => {
                             if argc != 1 { return Err(err(VmErrorKind::ArityError { expected: 1, got: argc }, format!("print() takes 1 positional argument but {} given", argc))); }
-                            let v = self.pop()?; println!("{}", display_value(&v)); self.push(Value::None)?;
+                            let v = self.pop()?; let s = display_value(&v);
+                            if let Some(buf) = self.out.as_mut() { buf.push_str(&s); buf.push('\n'); } else { println!("{}", s); }
+                            self.push(Value::None)?;
                         }
                         BUILTIN_INPUT_ID => {
                             if argc != 0 { return Err(err(VmErrorKind::ArityError { expected: 0, got: argc }, format!("input() takes 0 positional arguments but {} given", argc))); }
-                            use std::io::{self, Read};
-                            let mut buf = String::new();
-                            io::stdin().read_to_string(&mut buf).map_err(|e| err(VmErrorKind::TypeError("io"), format!("IO error: {}", e)))?;
-                            let line = buf.lines().next().unwrap_or("");
-                            let parsed = line.trim().parse::<i64>().map_err(|_| err(VmErrorKind::TypeError("parse"), "input() expects an integer line".into()))?;
-                            self.push(Value::Int(parsed))?;
+                            if let Some(line) = self.input.pop_front() {
+                                let parsed = line.trim().parse::<i64>().map_err(|_| err(VmErrorKind::TypeError("parse"), "input() expects an integer line".into()))?;
+                                self.push(Value::Int(parsed))?;
+                            } else {
+                                // Fallback to native stdin when no queued input is available
+                                use std::io::{self, Read};
+                                let mut buf = String::new();
+                                io::stdin().read_to_string(&mut buf).map_err(|e| err(VmErrorKind::TypeError("io"), format!("IO error: {}", e)))?;
+                                let line = buf.lines().next().unwrap_or("");
+                                let parsed = line.trim().parse::<i64>().map_err(|_| err(VmErrorKind::TypeError("parse"), "input() expects an integer line".into()))?;
+                                self.push(Value::Int(parsed))?;
+                            }
                         }
                         BUILTIN_INT_ID => {
                             if argc != 1 { return Err(err(VmErrorKind::ArityError { expected: 1, got: argc }, format!("int() takes 1 positional argument but {} given", argc))); }
@@ -126,6 +149,75 @@ impl Vm {
                 I::Return => {
                     let ret = self.leave_frame()?; if self.frames.is_empty() { return Ok(ret); } else if let Some(v) = ret { self.push(v)?; }
                 }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Execute with an explicit runtime I/O provider.
+    pub fn run_with_io<IO: RuntimeIo>(&mut self, module: &mut Module, io: &mut IO) -> VmResult<Option<Value>> {
+        if module.functions.is_empty() { return Ok(None); }
+        self.enter_func(module, 0, 0)?;
+        loop {
+            let (func_id, ip, code_len) = {
+                let f = match self.frames.last() { Some(f) => f, None => break };
+                let func = &module.functions[f.func_id];
+                (f.func_id, f.ip, func.code.len())
+            };
+            if ip >= code_len {
+                let ret = self.leave_frame()?;
+                if self.frames.is_empty() { return Ok(ret); }
+                if let Some(v) = ret { self.push(v)?; }
+                continue;
+            }
+            let ins = module.functions[func_id].code[ip];
+            if let Some(f) = self.frames.last_mut() { f.ip = ip + 1; }
+            match ins {
+                I::ConstI64(i) => { self.push(Value::Int(i))?; }
+                I::True => { self.push(Value::Bool(true))?; }
+                I::False => { self.push(Value::Bool(false))?; }
+                I::None => { self.push(Value::None)?; }
+                I::LoadLocal(ix) => { let v = self.get_local(ix)?; self.push(v)?; }
+                I::StoreLocal(ix) => { let v = self.pop()?; self.set_local(ix, v)?; }
+                I::LoadGlobal(ix) => { let v = module.globals.get(ix as usize).and_then(|o| o.clone()).ok_or_else(|| err(VmErrorKind::UndefinedGlobal(ix), format!("undefined global {}", ix)))?; self.push(v)?; }
+                I::StoreGlobal(ix) => { let v = self.pop()?; let slot = module.globals.get_mut(ix as usize).ok_or_else(|| err(VmErrorKind::UndefinedGlobal(ix), format!("invalid global index {}", ix)))?; *slot = Some(v); }
+                I::Add => { let (b,a) = (self.pop_int()?, self.pop_int()?); self.push(Value::Int(a + b))?; }
+                I::Sub => { let (b,a) = (self.pop_int()?, self.pop_int()?); self.push(Value::Int(a - b))?; }
+                I::Mul => { let (b,a) = (self.pop_int()?, self.pop_int()?); self.push(Value::Int(a * b))?; }
+                I::Div => { let (b,a) = (self.pop_int()?, self.pop_int()?); if b==0 { return Err(err(VmErrorKind::ZeroDivision, "integer division by zero".into())); } self.push(Value::Int(a / b))?; }
+                I::Mod => { let (b,a) = (self.pop_int()?, self.pop_int()?); if b==0 { return Err(err(VmErrorKind::ZeroDivision, "integer modulo by zero".into())); } self.push(Value::Int(a % b))?; }
+                I::Neg => { let a = self.pop_int()?; self.push(Value::Int(-a))?; }
+                I::Pos => { let a = self.pop_int()?; self.push(Value::Int(a))?; }
+                I::Eq => { let (b,a) = (self.pop()?, self.pop()?); self.push(Value::Bool(eq_vals(&a,&b)))?; }
+                I::Ne => { let (b,a) = (self.pop()?, self.pop()?); self.push(Value::Bool(!eq_vals(&a,&b)))?; }
+                I::Lt => { let (b,a) = (self.pop_int()?, self.pop_int()?); self.push(Value::Bool(a < b))?; }
+                I::Le => { let (b,a) = (self.pop_int()?, self.pop_int()?); self.push(Value::Bool(a <= b))?; }
+                I::Gt => { let (b,a) = (self.pop_int()?, self.pop_int()?); self.push(Value::Bool(a > b))?; }
+                I::Ge => { let (b,a) = (self.pop_int()?, self.pop_int()?); self.push(Value::Bool(a >= b))?; }
+                I::Not => { let a = self.pop_bool()?; self.push(Value::Bool(!a))?; }
+                I::Jump(off) => { self.add_ip_rel(off); }
+                I::JumpIfFalse(off) => { let c = self.pop_bool()?; if !c { self.add_ip_rel(off); } }
+                I::JumpIfTrue(off) => { let c = self.pop_bool()?; if c { self.add_ip_rel(off); } }
+                I::Call(fid, argc) => { let argc = argc as usize; self.enter_func(module, fid as usize, argc)?; }
+                I::CallBuiltin(bid, argc) => {
+                    let argc = argc as usize;
+                    match bid {
+                        BUILTIN_PRINT_ID => {
+                            if argc != 1 { return Err(err(VmErrorKind::ArityError { expected: 1, got: argc }, format!("print() takes 1 positional argument but {} given", argc))); }
+                            let v = self.pop()?; io.write_line(&display_value(&v)); self.push(Value::None)?;
+                        }
+                        BUILTIN_INPUT_ID => {
+                            if argc != 0 { return Err(err(VmErrorKind::ArityError { expected: 0, got: argc }, format!("input() takes 0 positional arguments but {} given", argc))); }
+                            let line = io.read_line().map_err(|e| err(VmErrorKind::TypeError("io"), e))?;
+                            let parsed = line.trim().parse::<i64>().map_err(|_| err(VmErrorKind::TypeError("parse"), "input() expects an integer line".into()))?;
+                            self.push(Value::Int(parsed))?;
+                        }
+                        BUILTIN_INT_ID => { if argc != 1 { return Err(err(VmErrorKind::ArityError { expected: 1, got: argc }, format!("int() takes 1 positional argument but {} given", argc))); } let v = self.pop()?; self.push(Value::Int(to_int(&v)))?; }
+                        BUILTIN_BOOL_ID => { if argc != 1 { return Err(err(VmErrorKind::ArityError { expected: 1, got: argc }, format!("bool() takes 1 positional argument but {} given", argc))); } let v = self.pop()?; self.push(Value::Bool(to_bool(&v)))?; }
+                        _ => return Err(err(VmErrorKind::TypeError("builtin"), format!("unknown builtin id {}", bid)))
+                    }
+                }
+                I::Return => { let ret = self.leave_frame()?; if self.frames.is_empty() { return Ok(ret); } else if let Some(v) = ret { self.push(v)?; } }
             }
         }
         Ok(None)
