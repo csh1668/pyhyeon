@@ -182,7 +182,6 @@ impl<'source> Lexer<'source> {
             RawToken::Comma => Token::Comma,
             RawToken::Semicolon => Token::Semicolon,
             RawToken::Newline => Token::Newline,
-            _ => unreachable!("unhandled RawToken variant"),
         }
     }
 }

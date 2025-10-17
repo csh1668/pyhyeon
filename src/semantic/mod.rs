@@ -15,7 +15,7 @@ pub struct SemanticError {
 pub type SemanticResult<T> = Result<T, SemanticError>;
 
 #[derive(Default)]
-pub(crate) struct ProgramContext {
+pub struct ProgramContext {
     builtins: HashSet<String>,
     functions: HashMap<String, usize>, // name -> arity
 }

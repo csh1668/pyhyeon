@@ -364,19 +364,19 @@ fn expect_int_pair(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResult<(
     }
 }
 
-fn expect_bool_pair(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResult<()> {
-    match (t1, t2) {
-        (Ty::Bool, Ty::Bool) => Ok(()),
-        (Ty::Unknown, Ty::Bool) | (Ty::Bool, Ty::Unknown) | (Ty::Unknown, Ty::Unknown) => Ok(()),
-        _ => Err(SemanticError {
-            message: format!(
-                "TypeError: expected Bool and Bool, got {:?} and {:?}",
-                t1, t2
-            ),
-            span,
-        }),
-    }
-}
+// fn expect_bool_pair(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResult<()> {
+//     match (t1, t2) {
+//         (Ty::Bool, Ty::Bool) => Ok(()),
+//         (Ty::Unknown, Ty::Bool) | (Ty::Bool, Ty::Unknown) | (Ty::Unknown, Ty::Unknown) => Ok(()),
+//         _ => Err(SemanticError {
+//             message: format!(
+//                 "TypeError: expected Bool and Bool, got {:?} and {:?}",
+//                 t1, t2
+//             ),
+//             span,
+//         }),
+//     }
+// }
 
 fn expect_same_or_unknown(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResult<()> {
     if t1 == Ty::Unknown || t2 == Ty::Unknown || t1 == t2 {

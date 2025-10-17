@@ -31,7 +31,7 @@ fn err(kind: VmErrorKind, message: String) -> VmError {
 }
 
 #[derive(Debug, Clone, Default)]
-struct Frame {
+pub struct Frame {
     ip: usize,
     func_id: usize,
     ret_stack_size: usize,
