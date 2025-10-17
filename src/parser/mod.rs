@@ -11,7 +11,8 @@ pub use chumsky::span::SimpleSpan;
 
 type RichTokenError<'a> = Rich<'a, Token>;
 
-pub fn expr_parser<'tokens, I>() -> impl Parser<'tokens, I, ExprS, extra::Err<RichTokenError<'tokens>>>
+pub fn expr_parser<'tokens, I>()
+-> impl Parser<'tokens, I, ExprS, extra::Err<RichTokenError<'tokens>>>
 where
     I: ValueInput<'tokens, Token = Token, Span = SimpleSpan> + 'tokens,
 {
@@ -166,7 +167,8 @@ where
     .boxed()
 }
 
-pub fn stmt_parser<'tokens, I>() -> impl Parser<'tokens, I, Vec<StmtS>, extra::Err<RichTokenError<'tokens>>>
+pub fn stmt_parser<'tokens, I>()
+-> impl Parser<'tokens, I, Vec<StmtS>, extra::Err<RichTokenError<'tokens>>>
 where
     I: ValueInput<'tokens, Token = Token, Span = SimpleSpan> + 'tokens,
 {
@@ -224,8 +226,8 @@ where
                 just(Token::Dedent),
             );
 
-        let block = just(Token::Colon)
-            .ignore_then(choice((indented_block, simple_stmts_line.clone())));
+        let block =
+            just(Token::Colon).ignore_then(choice((indented_block, simple_stmts_line.clone())));
 
         let def_stmt = just(Token::Def)
             .ignore_then(ident)
@@ -253,8 +255,8 @@ where
                 just(Token::Elif)
                     .ignore_then(expr.clone())
                     .then(block.clone())
-                .repeated()
-                .collect::<Vec<(ExprS, Vec<StmtS>)>>(),
+                    .repeated()
+                    .collect::<Vec<(ExprS, Vec<StmtS>)>>(),
             )
             .then(just(Token::Else).ignore_then(block.clone()).or_not())
             .map(
@@ -286,7 +288,13 @@ where
 
         choice((compound_stmt_line, simple_stmts_line))
             .padded_by(blank_lines)
-            .recover_with(skip_then_retry_until(any().ignored(), just(Token::Newline).ignored().or(just(Token::Dedent).ignored()).or(end().ignored())))
+            .recover_with(skip_then_retry_until(
+                any().ignored(),
+                just(Token::Newline)
+                    .ignored()
+                    .or(just(Token::Dedent).ignored())
+                    .or(end().ignored()),
+            ))
     })
     .boxed()
 }
@@ -301,7 +309,7 @@ where
 
     blanks
         .clone()
-        .ignore_then(line.clone().repeated().collect::<Vec<Vec<StmtS>>>() )
+        .ignore_then(line.clone().repeated().collect::<Vec<Vec<StmtS>>>())
         .map(|lines| lines.into_iter().flatten().collect::<Vec<StmtS>>())
         .then_ignore(blanks)
         .then_ignore(end())

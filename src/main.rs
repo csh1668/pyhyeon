@@ -5,8 +5,12 @@ fn main() {
     // engine selection: default interpreter; override with --engine=vm or --engine=interp
     let mut engine = String::from("interp");
     for arg in env::args().skip(1) {
-        if arg == "--engine=vm" { engine = "vm".into(); }
-        if arg == "--engine=interp" { engine = "interp".into(); }
+        if arg == "--engine=vm" {
+            engine = "vm".into();
+        }
+        if arg == "--engine=interp" {
+            engine = "interp".into();
+        }
     }
     // subcommands per plan.md: run/repl/compile/exec (minimal: run/compile/exec)
     // Usage examples:
@@ -19,40 +23,87 @@ fn main() {
     let mut out_path: Option<String> = None;
     if !args.is_empty() {
         let first = &args[0];
-        if ["run","compile","exec","repl"].contains(&first.as_str()) { subcmd = first.clone(); args.remove(0); }
+        if ["run", "compile", "exec", "repl"].contains(&first.as_str()) {
+            subcmd = first.clone();
+            args.remove(0);
+        }
     }
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             s if s.starts_with("--engine=") => { /* already handled */ }
-            "-o" => { if i+1 < args.len() { out_path = Some(args[i+1].clone()); i+=1; } }
-            p => { input_path = p.to_string(); }
+            "-o" => {
+                if i + 1 < args.len() {
+                    out_path = Some(args[i + 1].clone());
+                    i += 1;
+                }
+            }
+            p => {
+                input_path = p.to_string();
+            }
         }
-        i+=1;
+        i += 1;
     }
     let path = input_path.as_str();
     let src = std::fs::read_to_string(path).expect("Failed to read source file");
     // add newline if not present at the end of file
-    let src = if src.ends_with('\n') { src } else { format!("{}\n", src) };
+    let src = if src.ends_with('\n') {
+        src
+    } else {
+        format!("{}\n", src)
+    };
 
     match subcmd.as_str() {
         "run" => {
-            if let Ok(program) = lib::parse_source(path, &src)
-                && lib::analyze(&program, path, &src) {
-                    match engine.as_str() {
-                        "vm" => { let module = lib::compile_to_module(&program); lib::exec_vm_module(module); }
-                        _ => { lib::run_interpreter(&program, path, &src); }
+            let program = match lib::parse_source(&src) {
+                Ok(p) => p,
+                Err(diagnostics) => {
+                    for diag in diagnostics {
+                        eprint!("{}", diag.format(path, &src, "Parsing failed", 3));
+                    }
+                    return;
+                }
+            };
+            if let Err(diag) = lib::analyze(&program) {
+                eprint!(
+                    "{}",
+                    diag.format(path, &src, "Semantic Analyzing Failed", 4)
+                );
+                return;
+            }
+            match engine.as_str() {
+                "vm" => {
+                    let module = lib::compile_to_module(&program);
+                    lib::exec_vm_module(module);
+                }
+                _ => {
+                    if let Err(diag) = lib::run_interpreter(&program) {
+                        eprint!("{}", diag.format(path, &src, "Runtime Error", 5));
                     }
                 }
+            }
         }
         "compile" => {
-            if let Ok(program) = lib::parse_source(path, &src)
-                && lib::analyze(&program, path, &src) {
-                    let module = lib::compile_to_module(&program);
-                    let out = out_path.as_deref().unwrap_or("out.pyhb");
-                    lib::save_module(&module, out).expect("failed to save module");
-                    println!("wrote {}", out);
+            let program = match lib::parse_source(&src) {
+                Ok(p) => p,
+                Err(diagnostics) => {
+                    for diag in diagnostics {
+                        eprint!("{}", diag.format(path, &src, "Parsing failed", 3));
+                    }
+                    return;
                 }
+            };
+            if let Err(diag) = lib::analyze(&program) {
+                eprint!(
+                    "{}",
+                    diag.format(path, &src, "Semantic Analyzing Failed", 4)
+                );
+                return;
+            }
+            let module = lib::compile_to_module(&program);
+            let out = out_path.as_deref().unwrap_or("out.pyhb");
+            lib::save_module(&module, out).expect("failed to save module");
+            println!("wrote {}", out);
         }
         "exec" => {
             let module = lib::load_module(path).expect("failed to load module");

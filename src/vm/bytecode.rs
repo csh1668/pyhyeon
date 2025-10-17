@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Value {
@@ -71,5 +71,3 @@ pub const BUILTIN_PRINT_ID: u8 = 0;
 pub const BUILTIN_INPUT_ID: u8 = 1;
 pub const BUILTIN_INT_ID: u8 = 2;
 pub const BUILTIN_BOOL_ID: u8 = 3;
-
-

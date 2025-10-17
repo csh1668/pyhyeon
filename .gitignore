@@ -1,5 +1,6 @@
 /target
-plan.md
-python_grammer.md
+*.md
+!README.md
+
 *.pyhb
 web/pkg

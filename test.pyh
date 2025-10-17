@@ -1,6 +1,6 @@
 def f():
   x = 1
-  if True:
+  if False:
     y = 2
   return x + y
 

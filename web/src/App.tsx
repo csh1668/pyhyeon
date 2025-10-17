@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as monaco from 'monaco-editor'
 import { Github, Play, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { initWasm } from './lib/utils'
 import { analyze as wasmAnalyze, run as wasmRun } from '@pkg/pyhyeon'
+import { AnsiUp } from 'ansi_up'
 
 function App() {
   const editorRef = useRef<HTMLDivElement>(null)
@@ -13,6 +14,14 @@ function App() {
   const [editorWidth, setEditorWidth] = useState<number>(60) // 60% default
   const [isResizing, setIsResizing] = useState(false)
   const [wasmReady, setWasmReady] = useState(false)
+  
+  // ANSI to HTML converter
+  const ansiUp = useMemo(() => new AnsiUp(), [])
+  
+  // Convert ANSI output to HTML
+  const outputHtml = useMemo(() => {
+    return ansiUp.ansi_to_html(output)
+  }, [output, ansiUp])
 
   useEffect(() => {
     const init = async () => {
@@ -270,7 +279,7 @@ function App() {
             <span className="text-sm font-medium">Output</span>
           </div>
           <div className="output-container">
-            <pre className="output-content">{output}</pre>
+            <pre className="output-content" dangerouslySetInnerHTML={{ __html: outputHtml }} />
           </div>
         </div>
       </main>

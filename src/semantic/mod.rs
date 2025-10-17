@@ -39,7 +39,9 @@ pub fn analyze(program: &[StmtS]) -> SemanticResult<()> {
     let mut ctx = ProgramContext::new_with_builtins();
     let mut scopes = scope::ScopeStack::new();
     // preload builtins into global scope for resolution
-    for b in ctx.builtins.clone() { scopes.define(b); }
+    for b in ctx.builtins.clone() {
+        scopes.define(b);
+    }
 
     // 모듈 레벨 분석
     for stmt in program {
@@ -65,25 +67,40 @@ fn analyze_stmt_module(
         }
         Stmt::Assign { name, value } => {
             analyze_expr_module(value, scopes, ctx)?;
-            if !scopes.is_defined(name) { scopes.define(name.clone()); }
+            if !scopes.is_defined(name) {
+                scopes.define(name.clone());
+            }
             Ok(())
         }
-        Stmt::If { condition, then_block, elif_blocks, else_block } => {
+        Stmt::If {
+            condition,
+            then_block,
+            elif_blocks,
+            else_block,
+        } => {
             analyze_expr_module(condition, scopes, ctx)?;
             // 블록 스코프는 만들지 않는다
-            for s in then_block { analyze_stmt_module(s, scopes, ctx)?; }
+            for s in then_block {
+                analyze_stmt_module(s, scopes, ctx)?;
+            }
             for (cond, block) in elif_blocks {
                 analyze_expr_module(cond, scopes, ctx)?;
-                for s in block { analyze_stmt_module(s, scopes, ctx)?; }
+                for s in block {
+                    analyze_stmt_module(s, scopes, ctx)?;
+                }
             }
             if let Some(block) = else_block {
-                for s in block { analyze_stmt_module(s, scopes, ctx)?; }
+                for s in block {
+                    analyze_stmt_module(s, scopes, ctx)?;
+                }
             }
             Ok(())
         }
         Stmt::While { condition, body } => {
             analyze_expr_module(condition, scopes, ctx)?;
-            for s in body { analyze_stmt_module(s, scopes, ctx)?; }
+            for s in body {
+                analyze_stmt_module(s, scopes, ctx)?;
+            }
             Ok(())
         }
         Stmt::Return(expr) => analyze_expr_module(expr, scopes, ctx),
@@ -91,12 +108,19 @@ fn analyze_stmt_module(
     }
 }
 
-fn analyze_expr_module(expr: &ExprS, scopes: &mut scope::ScopeStack, ctx: &ProgramContext) -> SemanticResult<()> {
+fn analyze_expr_module(
+    expr: &ExprS,
+    scopes: &mut scope::ScopeStack,
+    ctx: &ProgramContext,
+) -> SemanticResult<()> {
     match &expr.0 {
         Expr::Literal(_) => Ok(()),
         Expr::Variable(name) => {
             if !scopes.is_defined(name) && !ctx.is_builtin(name) {
-                return Err(SemanticError { message: format!("Undefined variable: {}", name), span: expr.1.clone() });
+                return Err(SemanticError {
+                    message: format!("Undefined variable: {}", name),
+                    span: expr.1.clone(),
+                });
             }
             Ok(())
         }
@@ -107,9 +131,14 @@ fn analyze_expr_module(expr: &ExprS, scopes: &mut scope::ScopeStack, ctx: &Progr
         }
         Expr::Call { func_name, args } => {
             if !scopes.is_defined(func_name) && !ctx.is_builtin(func_name) {
-                return Err(SemanticError { message: format!("Undefined function: {}", func_name), span: expr.1.clone() });
+                return Err(SemanticError {
+                    message: format!("Undefined function: {}", func_name),
+                    span: expr.1.clone(),
+                });
             }
-            for a in args { analyze_expr_module(a, scopes, ctx)?; }
+            for a in args {
+                analyze_expr_module(a, scopes, ctx)?;
+            }
             Ok(())
         }
     }
@@ -125,7 +154,9 @@ fn analyze_function(
 ) -> SemanticResult<()> {
     // 함수 스코프 시작
     scopes.push();
-    for p in params { scopes.define(p.clone()); }
+    for p in params {
+        scopes.define(p.clone());
+    }
 
     // 로컬 판정: 파라미터 + 함수 내부의 모든 Assign/Def 이름
     let mut locals: HashSet<String> = params.iter().cloned().collect();
@@ -147,14 +178,29 @@ fn analyze_function(
 fn collect_locals(body: &Vec<StmtS>, locals: &mut HashSet<String>) {
     for s in body {
         match &s.0 {
-            Stmt::Assign { name, .. } => { locals.insert(name.clone()); }
-            Stmt::Def { name, .. } => { locals.insert(name.clone()); }
-            Stmt::If { then_block, elif_blocks, else_block, .. } => {
-                collect_locals(then_block, locals);
-                for (_, block) in elif_blocks { collect_locals(block, locals); }
-                if let Some(b) = else_block { collect_locals(b, locals); }
+            Stmt::Assign { name, .. } => {
+                locals.insert(name.clone());
             }
-            Stmt::While { body, .. } => { collect_locals(body, locals); }
+            Stmt::Def { name, .. } => {
+                locals.insert(name.clone());
+            }
+            Stmt::If {
+                then_block,
+                elif_blocks,
+                else_block,
+                ..
+            } => {
+                collect_locals(then_block, locals);
+                for (_, block) in elif_blocks {
+                    collect_locals(block, locals);
+                }
+                if let Some(b) = else_block {
+                    collect_locals(b, locals);
+                }
+            }
+            Stmt::While { body, .. } => {
+                collect_locals(body, locals);
+            }
             Stmt::Return(_) | Stmt::Expr(_) => {}
         }
     }
@@ -171,32 +217,52 @@ fn analyze_stmt_function(
         Stmt::Assign { name, value } => {
             analyze_expr_function(value, scopes, ctx, locals, assigned)?;
             assigned.insert(name.clone());
-            if !scopes.is_defined(name) { scopes.define(name.clone()); }
+            if !scopes.is_defined(name) {
+                scopes.define(name.clone());
+            }
             Ok(())
         }
         Stmt::Def { name, params, body } => {
             // 함수 정의도 로컬에 바인딩
-            if !scopes.is_defined(name) { scopes.define(name.clone()); }
+            if !scopes.is_defined(name) {
+                scopes.define(name.clone());
+            }
             // 중첩 함수: 캡처 미지원 → 내부에서 바깥 로컬 참조 시 이후 타입/이름 단계에서 오류가 날 수 있음
-            let mut inner_ctx = ProgramContext { builtins: ctx.builtins.clone(), functions: ctx.functions.clone() };
+            let mut inner_ctx = ProgramContext {
+                builtins: ctx.builtins.clone(),
+                functions: ctx.functions.clone(),
+            };
             inner_ctx.functions.insert(name.clone(), params.len());
             analyze_function(name, params, body, scopes, &mut inner_ctx, stmt.1.clone())
         }
-        Stmt::If { condition, then_block, elif_blocks, else_block } => {
+        Stmt::If {
+            condition,
+            then_block,
+            elif_blocks,
+            else_block,
+        } => {
             analyze_expr_function(condition, scopes, ctx, locals, assigned)?;
-            for s in then_block { analyze_stmt_function(s, scopes, ctx, locals, assigned)?; }
+            for s in then_block {
+                analyze_stmt_function(s, scopes, ctx, locals, assigned)?;
+            }
             for (cond, block) in elif_blocks {
                 analyze_expr_function(cond, scopes, ctx, locals, assigned)?;
-                for s in block { analyze_stmt_function(s, scopes, ctx, locals, assigned)?; }
+                for s in block {
+                    analyze_stmt_function(s, scopes, ctx, locals, assigned)?;
+                }
             }
             if let Some(block) = else_block {
-                for s in block { analyze_stmt_function(s, scopes, ctx, locals, assigned)?; }
+                for s in block {
+                    analyze_stmt_function(s, scopes, ctx, locals, assigned)?;
+                }
             }
             Ok(())
         }
         Stmt::While { condition, body } => {
             analyze_expr_function(condition, scopes, ctx, locals, assigned)?;
-            for s in body { analyze_stmt_function(s, scopes, ctx, locals, assigned)?; }
+            for s in body {
+                analyze_stmt_function(s, scopes, ctx, locals, assigned)?;
+            }
             Ok(())
         }
         Stmt::Return(expr) => analyze_expr_function(expr, scopes, ctx, locals, assigned),
@@ -216,16 +282,24 @@ fn analyze_expr_function(
         Expr::Variable(name) => {
             if locals.contains(name) {
                 if !assigned.contains(name) {
-                    return Err(SemanticError { message: format!("Unbound local variable: {}", name), span: expr.1.clone() });
+                    return Err(SemanticError {
+                        message: format!("Unbound local variable: {}", name),
+                        span: expr.1.clone(),
+                    });
                 }
                 return Ok(());
             }
             if !scopes.is_defined(name) && !ctx.is_builtin(name) {
-                return Err(SemanticError { message: format!("Undefined variable: {}", name), span: expr.1.clone() });
+                return Err(SemanticError {
+                    message: format!("Undefined variable: {}", name),
+                    span: expr.1.clone(),
+                });
             }
             Ok(())
         }
-        Expr::Unary { op: _, expr: inner } => analyze_expr_function(inner, scopes, ctx, locals, assigned),
+        Expr::Unary { op: _, expr: inner } => {
+            analyze_expr_function(inner, scopes, ctx, locals, assigned)
+        }
         Expr::Binary { op: _, left, right } => {
             analyze_expr_function(left, scopes, ctx, locals, assigned)?;
             analyze_expr_function(right, scopes, ctx, locals, assigned)
@@ -233,12 +307,20 @@ fn analyze_expr_function(
         Expr::Call { func_name, args } => {
             if locals.contains(func_name) {
                 if !assigned.contains(func_name) {
-                    return Err(SemanticError { message: format!("Unbound local function: {}", func_name), span: expr.1.clone() });
+                    return Err(SemanticError {
+                        message: format!("Unbound local function: {}", func_name),
+                        span: expr.1.clone(),
+                    });
                 }
             } else if !scopes.is_defined(func_name) && !ctx.is_builtin(func_name) {
-                return Err(SemanticError { message: format!("Undefined function: {}", func_name), span: expr.1.clone() });
+                return Err(SemanticError {
+                    message: format!("Undefined function: {}", func_name),
+                    span: expr.1.clone(),
+                });
             }
-            for a in args { analyze_expr_function(a, scopes, ctx, locals, assigned)?; }
+            for a in args {
+                analyze_expr_function(a, scopes, ctx, locals, assigned)?;
+            }
             Ok(())
         }
     }
