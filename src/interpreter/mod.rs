@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::builtins;
 use crate::parser::ast::{BinaryOp, Expr, ExprS, Literal, Stmt, StmtS, UnaryOp};
+use crate::runtime_io::RuntimeIo;
 use crate::types::Span;
 
 #[derive(Debug, Clone)]
@@ -76,17 +77,12 @@ pub struct RuntimeError {
 
 type RtResult<T> = Result<T, RuntimeError>;
 
-pub struct Interpreter {
+pub struct Interpreter<IO: RuntimeIo = crate::runtime_io::StdIo> {
     pub env: Env,
+    pub io: IO,
 }
 
-impl Default for Interpreter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Interpreter {
+impl Interpreter<crate::runtime_io::StdIo> {
     pub fn new() -> Self {
         let mut env = Env::new();
         for b in builtins::all() {
@@ -103,7 +99,58 @@ impl Interpreter {
             )
             .unwrap();
         }
-        Self { env }
+        Self { 
+            env,
+            io: crate::runtime_io::StdIo,
+        }
+    }
+}
+
+impl<IO: RuntimeIo> Default for Interpreter<IO> 
+where
+    IO: Default,
+{
+    fn default() -> Self {
+        let mut env = Env::new();
+        for b in builtins::all() {
+            let params: Vec<String> = b.params.iter().map(|&s| (*s).to_string()).collect();
+            env.define(
+                b.name.to_string(),
+                Value::Function(Function {
+                    name: b.name.to_string(),
+                    params,
+                    body: vec![],
+                    env: Env::new(),
+                }),
+                0..0,
+            )
+            .unwrap();
+        }
+        Self { 
+            env,
+            io: IO::default(),
+        }
+    }
+}
+
+impl<IO: RuntimeIo> Interpreter<IO> {
+    pub fn with_io(io: IO) -> Self {
+        let mut env = Env::new();
+        for b in builtins::all() {
+            let params: Vec<String> = b.params.iter().map(|&s| (*s).to_string()).collect();
+            env.define(
+                b.name.to_string(),
+                Value::Function(Function {
+                    name: b.name.to_string(),
+                    params,
+                    body: vec![],
+                    env: Env::new(),
+                }),
+                0..0,
+            )
+            .unwrap();
+        }
+        Self { env, io }
     }
 
     pub fn run(&mut self, program: &[StmtS]) -> RtResult<()> {
@@ -227,13 +274,13 @@ impl Interpreter {
                 use BinaryOp as B;
                 match op {
                     B::Add => Ok(Value::Int(
-                        to_int(&lv, left.1.clone())? + to_int(&rv, right.1.clone())?,
+                        to_int(&lv, left.1.clone())?.wrapping_add(to_int(&rv, right.1.clone())?),
                     )),
                     B::Subtract => Ok(Value::Int(
-                        to_int(&lv, left.1.clone())? - to_int(&rv, right.1.clone())?,
+                        to_int(&lv, left.1.clone())?.wrapping_sub(to_int(&rv, right.1.clone())?),
                     )),
                     B::Multiply => Ok(Value::Int(
-                        to_int(&lv, left.1.clone())? * to_int(&rv, right.1.clone())?,
+                        to_int(&lv, left.1.clone())?.wrapping_mul(to_int(&rv, right.1.clone())?),
                     )),
                     B::FloorDivide => {
                         let a = to_int(&lv, left.1.clone())?;
@@ -292,7 +339,7 @@ impl Interpreter {
                     });
                 }
                 let v = self.eval_expr(&args[0])?;
-                println!("{}", display_value(&v));
+                self.io.write_line(&display_value(&v));
                 return Ok(Value::None);
             }
             "input" => {
@@ -305,19 +352,12 @@ impl Interpreter {
                         span: call_span.clone(),
                     });
                 }
-                // Simple line-based input (reads one line)
-                use std::io::{self, Read};
-                let mut buf = String::new();
-                // On Windows console, read_line would be more appropriate, but stdin buffered read suffices here
-                io::stdin()
-                    .read_to_string(&mut buf)
-                    .map_err(|e| RuntimeError {
-                        message: format!("IOError: {}", e),
-                        span: call_span.clone(),
-                    })?;
-                let line = buf.lines().next().unwrap_or("");
+                let line = self.io.read_line().map_err(|e| RuntimeError {
+                    message: format!("IOError: {}", e),
+                    span: call_span.clone(),
+                })?;
                 let parsed = line.trim().parse::<i64>().map_err(|_| RuntimeError {
-                    message: "ValueError: input() expects an integer line".into(),
+                    message: format!("ValueError: invalid literal for int(): '{}'", line.trim()),
                     span: call_span.clone(),
                 })?;
                 return Ok(Value::Int(parsed));

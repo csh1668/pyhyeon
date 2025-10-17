@@ -325,3 +325,290 @@ fn analyze_expr_function(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::ast::{BinaryOp, Expr, Literal, Stmt};
+
+    fn make_expr(expr: Expr) -> ExprS {
+        (expr, 0..1)
+    }
+
+    fn make_stmt(stmt: Stmt) -> StmtS {
+        (stmt, 0..1)
+    }
+
+    // ========== 스코프 해석 테스트 ==========
+
+    #[test]
+    fn test_analyze_global_variable() {
+        let program = vec![
+            make_stmt(Stmt::Assign {
+                name: "x".to_string(),
+                value: make_expr(Expr::Literal(Literal::Int(42))),
+            }),
+            make_stmt(Stmt::Expr(make_expr(Expr::Variable("x".to_string())))),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_undefined_variable() {
+        let program = vec![
+            make_stmt(Stmt::Expr(make_expr(Expr::Variable("undefined".to_string())))),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_err());
+        if let Err(err) = result {
+            assert!(err.message.contains("Undefined variable"));
+        }
+    }
+
+    #[test]
+    fn test_analyze_function_definition() {
+        let program = vec![
+            make_stmt(Stmt::Def {
+                name: "foo".to_string(),
+                params: vec![],
+                body: vec![
+                    make_stmt(Stmt::Return(make_expr(Expr::Literal(Literal::Int(42))))),
+                ],
+            }),
+            make_stmt(Stmt::Expr(make_expr(Expr::Call {
+                func_name: "foo".to_string(),
+                args: vec![],
+            }))),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_undefined_function() {
+        let program = vec![
+            make_stmt(Stmt::Expr(make_expr(Expr::Call {
+                func_name: "undefined".to_string(),
+                args: vec![],
+            }))),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_err());
+        if let Err(err) = result {
+            assert!(err.message.contains("Undefined function"));
+        }
+    }
+
+    #[test]
+    fn test_analyze_function_parameters() {
+        let program = vec![
+            make_stmt(Stmt::Def {
+                name: "add".to_string(),
+                params: vec!["a".to_string(), "b".to_string()],
+                body: vec![
+                    make_stmt(Stmt::Return(make_expr(Expr::Binary {
+                        op: BinaryOp::Add,
+                        left: Box::new(make_expr(Expr::Variable("a".to_string()))),
+                        right: Box::new(make_expr(Expr::Variable("b".to_string()))),
+                    }))),
+                ],
+            }),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_unbound_local_variable() {
+        // 함수 내에서 로컬 변수를 할당 전에 사용하는 경우
+        let program = vec![
+            make_stmt(Stmt::Def {
+                name: "foo".to_string(),
+                params: vec![],
+                body: vec![
+                    make_stmt(Stmt::Expr(make_expr(Expr::Variable("x".to_string())))),
+                    make_stmt(Stmt::Assign {
+                        name: "x".to_string(),
+                        value: make_expr(Expr::Literal(Literal::Int(42))),
+                    }),
+                ],
+            }),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_err());
+        if let Err(err) = result {
+            assert!(err.message.contains("Unbound local variable"));
+        }
+    }
+
+    #[test]
+    fn test_analyze_builtin_function() {
+        let program = vec![
+            make_stmt(Stmt::Expr(make_expr(Expr::Call {
+                func_name: "print".to_string(),
+                args: vec![make_expr(Expr::Literal(Literal::Int(42)))],
+            }))),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_nested_scopes() {
+        let program = vec![
+            make_stmt(Stmt::Assign {
+                name: "x".to_string(),
+                value: make_expr(Expr::Literal(Literal::Int(1))),
+            }),
+            make_stmt(Stmt::Def {
+                name: "outer".to_string(),
+                params: vec![],
+                body: vec![
+                    make_stmt(Stmt::Def {
+                        name: "inner".to_string(),
+                        params: vec![],
+                        body: vec![
+                            make_stmt(Stmt::Return(make_expr(Expr::Variable("x".to_string())))),
+                        ],
+                    }),
+                ],
+            }),
+        ];
+        
+        let result = analyze(&program);
+        // 글로벌 x를 inner 함수에서 참조 가능
+        assert!(result.is_ok());
+    }
+
+    // ========== 타입 체킹 테스트 ==========
+
+    #[test]
+    fn test_analyze_type_error_add_bool() {
+        let program = vec![
+            make_stmt(Stmt::Expr(make_expr(Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(make_expr(Expr::Literal(Literal::Bool(true)))),
+                right: Box::new(make_expr(Expr::Literal(Literal::Int(42)))),
+            }))),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_analyze_logical_on_int_allowed() {
+        // Python allows int in logical operations (truthy/falsy)
+        let program = vec![
+            make_stmt(Stmt::Expr(make_expr(Expr::Binary {
+                op: BinaryOp::And,
+                left: Box::new(make_expr(Expr::Literal(Literal::Int(1)))),
+                right: Box::new(make_expr(Expr::Literal(Literal::Int(2)))),
+            }))),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_ok(), "Logical operations on int should be allowed");
+    }
+
+    #[test]
+    fn test_analyze_if_condition_type() {
+        let program = vec![
+            make_stmt(Stmt::If {
+                condition: make_expr(Expr::Literal(Literal::Bool(true))),
+                then_block: vec![
+                    make_stmt(Stmt::Expr(make_expr(Expr::Literal(Literal::Int(1))))),
+                ],
+                elif_blocks: vec![],
+                else_block: None,
+            }),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_while_condition_type() {
+        let program = vec![
+            make_stmt(Stmt::While {
+                condition: make_expr(Expr::Literal(Literal::Bool(true))),
+                body: vec![
+                    make_stmt(Stmt::Expr(make_expr(Expr::Literal(Literal::Int(1))))),
+                ],
+            }),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_return_type_consistency() {
+        // 같은 함수에서 다른 타입을 반환하는 경우
+        let program = vec![
+            make_stmt(Stmt::Def {
+                name: "foo".to_string(),
+                params: vec!["x".to_string()],
+                body: vec![
+                    make_stmt(Stmt::If {
+                        condition: make_expr(Expr::Variable("x".to_string())),
+                        then_block: vec![
+                            make_stmt(Stmt::Return(make_expr(Expr::Literal(Literal::Int(1))))),
+                        ],
+                        elif_blocks: vec![],
+                        else_block: Some(vec![
+                            make_stmt(Stmt::Return(make_expr(Expr::Literal(Literal::Bool(true))))),
+                        ]),
+                    }),
+                ],
+            }),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_err());
+    }
+
+    // ========== 에러 케이스 테스트 ==========
+
+    #[test]
+    fn test_analyze_multiple_errors() {
+        // 여러 개의 에러가 있는 경우, 첫 번째 에러만 보고됨
+        let program = vec![
+            make_stmt(Stmt::Expr(make_expr(Expr::Variable("undefined1".to_string())))),
+            make_stmt(Stmt::Expr(make_expr(Expr::Variable("undefined2".to_string())))),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_analyze_complex_expression() {
+        let program = vec![
+            make_stmt(Stmt::Assign {
+                name: "result".to_string(),
+                value: make_expr(Expr::Binary {
+                    op: BinaryOp::Add,
+                    left: Box::new(make_expr(Expr::Binary {
+                        op: BinaryOp::Multiply,
+                        left: Box::new(make_expr(Expr::Literal(Literal::Int(2)))),
+                        right: Box::new(make_expr(Expr::Literal(Literal::Int(3)))),
+                    })),
+                    right: Box::new(make_expr(Expr::Literal(Literal::Int(4)))),
+                }),
+            }),
+        ];
+        
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+}

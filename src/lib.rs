@@ -7,6 +7,9 @@ pub mod semantic;
 pub mod types;
 pub mod vm;
 
+pub use runtime_io::RuntimeIo;
+pub use vm::Vm;
+
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::Parser;
 use chumsky::input::{Input, Stream};
@@ -86,6 +89,20 @@ pub fn analyze(program: &[parser::ast::StmtS]) -> Result<(), Diagnostic> {
 
 pub fn run_interpreter(program: &[parser::ast::StmtS]) -> Result<(), Diagnostic> {
     let mut interp = interpreter::Interpreter::new();
+    match interp.run(program) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(Diagnostic {
+            message: e.message,
+            span: e.span,
+        }),
+    }
+}
+
+pub fn run_interpreter_with_io<IO: runtime_io::RuntimeIo>(
+    program: &[parser::ast::StmtS],
+    io: IO,
+) -> Result<(), Diagnostic> {
+    let mut interp = interpreter::Interpreter::with_io(io);
     match interp.run(program) {
         Ok(_) => Ok(()),
         Err(e) => Err(Diagnostic {

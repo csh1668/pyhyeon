@@ -315,3 +315,379 @@ where
         .then_ignore(end())
         .boxed()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+
+    fn tokenize(source: &str) -> Vec<(Token, SimpleSpan)> {
+        let mut lexer = Lexer::new(source);
+        let mut tokens = Vec::new();
+        loop {
+            let (token, span) = lexer.next_token_with_span();
+            if token == Token::Eof {
+                // Don't include Eof token, use stream end instead
+                break;
+            }
+            tokens.push((token, SimpleSpan::from(span)));
+        }
+        tokens
+    }
+
+    fn parse_expr(source: &str) -> Result<ExprS, Vec<RichTokenError<'_>>> {
+        let tokens = tokenize(source);
+        let eoi_span = SimpleSpan::new(source.len(), source.len());
+        let stream = chumsky::input::Stream::from_iter(tokens.into_iter()).map(eoi_span, |(t, s)| (t, s));
+        expr_parser().parse(stream).into_result()
+    }
+
+    fn parse_program(source: &str) -> Result<Vec<StmtS>, Vec<RichTokenError<'_>>> {
+        let tokens = tokenize(source);
+        let eoi_span = SimpleSpan::new(source.len(), source.len());
+        let stream = chumsky::input::Stream::from_iter(tokens.into_iter()).map(eoi_span, |(t, s)| (t, s));
+        program_parser().parse(stream).into_result()
+    }
+
+    // ========== 표현식 파싱 테스트 ==========
+
+    #[test]
+    fn test_parse_literal_int() {
+        let result = parse_expr("42");
+        assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        let expr = result.unwrap();
+        assert!(matches!(expr.0, Expr::Literal(Literal::Int(42))));
+    }
+
+    #[test]
+    fn test_parse_literal_bool() {
+        let result = parse_expr("True");
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().0, Expr::Literal(Literal::Bool(true))));
+
+        let result = parse_expr("False");
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().0, Expr::Literal(Literal::Bool(false))));
+    }
+
+    #[test]
+    fn test_parse_literal_none() {
+        let result = parse_expr("None");
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().0, Expr::Literal(Literal::None)));
+    }
+
+    #[test]
+    fn test_parse_variable() {
+        let result = parse_expr("x");
+        assert!(result.is_ok());
+        if let Expr::Variable(name) = result.unwrap().0 {
+            assert_eq!(name, "x");
+        } else {
+            panic!("Expected variable");
+        }
+    }
+
+    #[test]
+    fn test_parse_binary_add() {
+        let result = parse_expr("1 + 2");
+        assert!(result.is_ok());
+        let expr = result.unwrap();
+        if let Expr::Binary { op, left, right } = expr.0 {
+            assert!(matches!(op, BinaryOp::Add));
+            assert!(matches!(left.0, Expr::Literal(Literal::Int(1))));
+            assert!(matches!(right.0, Expr::Literal(Literal::Int(2))));
+        } else {
+            panic!("Expected binary expression");
+        }
+    }
+
+    #[test]
+    fn test_parse_binary_precedence() {
+        // 1 + 2 * 3 should parse as 1 + (2 * 3)
+        let result = parse_expr("1 + 2 * 3");
+        assert!(result.is_ok());
+        let expr = result.unwrap();
+        if let Expr::Binary { op: BinaryOp::Add, left, right } = expr.0 {
+            assert!(matches!(left.0, Expr::Literal(Literal::Int(1))));
+            if let Expr::Binary { op: BinaryOp::Multiply, .. } = right.0 {
+                // correct precedence
+            } else {
+                panic!("Expected multiplication on right");
+            }
+        } else {
+            panic!("Expected addition at top level");
+        }
+    }
+
+    #[test]
+    fn test_parse_unary_negate() {
+        let result = parse_expr("-42");
+        assert!(result.is_ok());
+        if let Expr::Unary { op, expr } = result.unwrap().0 {
+            assert!(matches!(op, UnaryOp::Negate));
+            assert!(matches!(expr.0, Expr::Literal(Literal::Int(42))));
+        } else {
+            panic!("Expected unary negate");
+        }
+    }
+
+    #[test]
+    fn test_parse_unary_not() {
+        let result = parse_expr("not True");
+        assert!(result.is_ok());
+        if let Expr::Unary { op, expr } = result.unwrap().0 {
+            assert!(matches!(op, UnaryOp::Not));
+            assert!(matches!(expr.0, Expr::Literal(Literal::Bool(true))));
+        } else {
+            panic!("Expected unary not");
+        }
+    }
+
+    #[test]
+    fn test_parse_call_no_args() {
+        let result = parse_expr("foo()");
+        assert!(result.is_ok());
+        if let Expr::Call { func_name, args } = result.unwrap().0 {
+            assert_eq!(func_name, "foo");
+            assert_eq!(args.len(), 0);
+        } else {
+            panic!("Expected call");
+        }
+    }
+
+    #[test]
+    fn test_parse_call_with_args() {
+        let result = parse_expr("add(1, 2)");
+        assert!(result.is_ok());
+        if let Expr::Call { func_name, args } = result.unwrap().0 {
+            assert_eq!(func_name, "add");
+            assert_eq!(args.len(), 2);
+            assert!(matches!(args[0].0, Expr::Literal(Literal::Int(1))));
+            assert!(matches!(args[1].0, Expr::Literal(Literal::Int(2))));
+        } else {
+            panic!("Expected call");
+        }
+    }
+
+    #[test]
+    fn test_parse_comparison() {
+        let result = parse_expr("x < 10");
+        assert!(result.is_ok());
+        if let Expr::Binary { op, .. } = result.unwrap().0 {
+            assert!(matches!(op, BinaryOp::Less));
+        } else {
+            panic!("Expected comparison");
+        }
+    }
+
+    #[test]
+    fn test_parse_logical_and() {
+        let result = parse_expr("True and False");
+        assert!(result.is_ok());
+        if let Expr::Binary { op, .. } = result.unwrap().0 {
+            assert!(matches!(op, BinaryOp::And));
+        } else {
+            panic!("Expected logical and");
+        }
+    }
+
+    #[test]
+    fn test_parse_logical_or() {
+        let result = parse_expr("True or False");
+        assert!(result.is_ok());
+        if let Expr::Binary { op, .. } = result.unwrap().0 {
+            assert!(matches!(op, BinaryOp::Or));
+        } else {
+            panic!("Expected logical or");
+        }
+    }
+
+    #[test]
+    fn test_parse_parenthesized() {
+        let result = parse_expr("(1 + 2) * 3");
+        assert!(result.is_ok());
+        // Should parse as (1+2)*3, not 1+(2*3)
+        if let Expr::Binary { op: BinaryOp::Multiply, left, right } = result.unwrap().0 {
+            assert!(matches!(left.0, Expr::Binary { op: BinaryOp::Add, .. }));
+            assert!(matches!(right.0, Expr::Literal(Literal::Int(3))));
+        } else {
+            panic!("Expected multiplication at top level");
+        }
+    }
+
+    // ========== 문장 파싱 테스트 ==========
+
+    #[test]
+    fn test_parse_assign() {
+        let source = "x = 42\n";
+        let result = parse_program(source);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        let stmts = result.unwrap();
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::Assign { name, value } = &stmts[0].0 {
+            assert_eq!(name, "x");
+            assert!(matches!(value.0, Expr::Literal(Literal::Int(42))));
+        } else {
+            panic!("Expected assignment");
+        }
+    }
+
+    #[test]
+    fn test_parse_expr_stmt() {
+        let result = parse_program("print(42)\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(stmts[0].0, Stmt::Expr(_)));
+    }
+
+    #[test]
+    fn test_parse_return() {
+        let result = parse_program("def foo():\n  return 42\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::Def { body, .. } = &stmts[0].0 {
+            assert_eq!(body.len(), 1);
+            assert!(matches!(body[0].0, Stmt::Return(_)));
+        } else {
+            panic!("Expected def");
+        }
+    }
+
+    #[test]
+    fn test_parse_if() {
+        let result = parse_program("if x > 0:\n  y = 1\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::If { condition, then_block, elif_blocks, else_block } = &stmts[0].0 {
+            assert!(matches!(condition.0, Expr::Binary { op: BinaryOp::Greater, .. }));
+            assert_eq!(then_block.len(), 1);
+            assert_eq!(elif_blocks.len(), 0);
+            assert!(else_block.is_none());
+        } else {
+            panic!("Expected if statement");
+        }
+    }
+
+    #[test]
+    fn test_parse_if_elif_else() {
+        let source = "\
+if x > 0:
+  y = 1
+elif x == 0:
+  y = 0
+else:
+  y = -1
+";
+        let result = parse_program(source);
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::If { elif_blocks, else_block, .. } = &stmts[0].0 {
+            assert_eq!(elif_blocks.len(), 1);
+            assert!(else_block.is_some());
+        } else {
+            panic!("Expected if statement");
+        }
+    }
+
+    #[test]
+    fn test_parse_while() {
+        let result = parse_program("while x > 0:\n  x = x - 1\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::While { condition, body } = &stmts[0].0 {
+            assert!(matches!(condition.0, Expr::Binary { op: BinaryOp::Greater, .. }));
+            assert_eq!(body.len(), 1);
+        } else {
+            panic!("Expected while statement");
+        }
+    }
+
+    #[test]
+    fn test_parse_def_no_params() {
+        let result = parse_program("def foo():\n  return 42\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::Def { name, params, body } = &stmts[0].0 {
+            assert_eq!(name, "foo");
+            assert_eq!(params.len(), 0);
+            assert_eq!(body.len(), 1);
+        } else {
+            panic!("Expected def");
+        }
+    }
+
+    #[test]
+    fn test_parse_def_with_params() {
+        let result = parse_program("def add(a, b):\n  return a + b\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::Def { name, params, body } = &stmts[0].0 {
+            assert_eq!(name, "add");
+            assert_eq!(params.len(), 2);
+            assert_eq!(params[0], "a");
+            assert_eq!(params[1], "b");
+            assert_eq!(body.len(), 1);
+        } else {
+            panic!("Expected def");
+        }
+    }
+
+    #[test]
+    fn test_parse_multiple_stmts() {
+        let source = "\
+x = 1
+y = 2
+z = x + y
+";
+        let result = parse_program(source);
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        assert_eq!(stmts.len(), 3);
+        assert!(matches!(stmts[0].0, Stmt::Assign { .. }));
+        assert!(matches!(stmts[1].0, Stmt::Assign { .. }));
+        assert!(matches!(stmts[2].0, Stmt::Assign { .. }));
+    }
+
+    #[test]
+    fn test_parse_nested_blocks() {
+        let source = "\
+if x > 0:
+  if y > 0:
+    z = 1
+  else:
+    z = 2
+";
+        let result = parse_program(source);
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::If { then_block, .. } = &stmts[0].0 {
+            assert_eq!(then_block.len(), 1);
+            assert!(matches!(then_block[0].0, Stmt::If { .. }));
+        } else {
+            panic!("Expected if statement");
+        }
+    }
+
+    // ========== 에러 복구 테스트 ==========
+
+    #[test]
+    fn test_parse_error_unclosed_paren() {
+        let result = parse_expr("(1 + 2");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_error_invalid_syntax() {
+        let result = parse_program("x = = 42\n");
+        assert!(result.is_err());
+    }
+}
