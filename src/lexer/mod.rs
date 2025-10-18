@@ -163,6 +163,7 @@ impl<'source> Lexer<'source> {
             RawToken::Not => Token::Not,
             RawToken::Bool(b) => Token::Bool(b),
             RawToken::Int(i) => Token::Int(i),
+            RawToken::String(s) => Token::String(s),
             RawToken::Identifier(name) => Token::Identifier(name),
             RawToken::Plus => Token::Plus,
             RawToken::Minus => Token::Minus,

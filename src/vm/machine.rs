@@ -108,13 +108,17 @@ impl Vm {
                 }
                 continue;
             }
-            let ins = module.functions[func_id].code[ip];
+            let ins = &module.functions[func_id].code[ip];
             if let Some(f) = self.frames.last_mut() {
                 f.ip = ip + 1;
             }
             match ins {
                 I::ConstI64(i) => {
-                    self.push(Value::Int(i))?;
+                    self.push(Value::Int(*i))?;
+                }
+                I::ConstStr(i) => {
+                    let s = module.string_pool[*i as usize].clone();
+                    self.push(Value::String(s))?;
                 }
                 I::True => {
                     self.push(Value::Bool(true))?;
@@ -126,32 +130,32 @@ impl Vm {
                     self.push(Value::None)?;
                 }
                 I::LoadLocal(ix) => {
-                    let v = self.get_local(ix)?;
+                    let v = self.get_local(*ix)?;
                     self.push(v)?;
                 }
                 I::StoreLocal(ix) => {
                     let v = self.pop()?;
-                    self.set_local(ix, v)?;
+                    self.set_local(*ix, v)?;
                 }
                 I::LoadGlobal(ix) => {
                     let v = module
                         .globals
-                        .get(ix as usize)
+                        .get(*ix as usize)
                         .and_then(|o| o.clone())
                         .ok_or_else(|| {
                             err(
-                                VmErrorKind::UndefinedGlobal(ix),
-                                format!("undefined global {}", ix),
+                                VmErrorKind::UndefinedGlobal(*ix),
+                                format!("undefined global {}", *ix),
                             )
                         })?;
                     self.push(v)?;
                 }
                 I::StoreGlobal(ix) => {
                     let v = self.pop()?;
-                    let slot = module.globals.get_mut(ix as usize).ok_or_else(|| {
+                    let slot = module.globals.get_mut(*ix as usize).ok_or_else(|| {
                         err(
-                            VmErrorKind::UndefinedGlobal(ix),
-                            format!("invalid global index {}", ix),
+                            VmErrorKind::UndefinedGlobal(*ix),
+                            format!("invalid global index {}", *ix),
                         )
                     })?;
                     *slot = Some(v);
@@ -225,26 +229,27 @@ impl Vm {
                     self.push(Value::Bool(!a))?;
                 }
                 I::Jump(off) => {
-                    self.add_ip_rel(off);
+                    self.add_ip_rel(*off);
                 }
                 I::JumpIfFalse(off) => {
                     let c = self.pop_bool()?;
                     if !c {
-                        self.add_ip_rel(off);
+                        self.add_ip_rel(*off);
                     }
                 }
                 I::JumpIfTrue(off) => {
                     let c = self.pop_bool()?;
                     if c {
-                        self.add_ip_rel(off);
+                        self.add_ip_rel(*off);
                     }
                 }
                 I::Call(fid, argc) => {
-                    let argc = argc as usize;
-                    self.enter_func(module, fid as usize, argc)?;
+                    let argc = *argc as usize;
+                    self.enter_func(module, *fid as usize, argc)?;
                 }
                 I::CallBuiltin(bid, argc) => {
-                    let argc = argc as usize;
+                    let argc = *argc as usize;
+                    let bid = *bid;
                     match bid {
                         BUILTIN_PRINT_ID => {
                             if argc != 1 {
@@ -401,13 +406,13 @@ impl Vm {
             .frames
             .last()
             .ok_or_else(|| err(VmErrorKind::StackUnderflow, "no frame".into()))?;
-        let v = *f.locals.get(ix as usize).ok_or_else(|| {
+        let v = f.locals.get(ix as usize).ok_or_else(|| {
             err(
                 VmErrorKind::UndefinedGlobal(ix),
                 format!("invalid local index {}", ix),
             )
         })?;
-        Ok(v)
+        Ok(v.clone())
     }
 
     fn set_local(&mut self, ix: u16, v: Value) -> VmResult<()> {
@@ -445,7 +450,8 @@ fn to_int(v: &Value) -> i64 {
             } else {
                 0
             }
-        }
+        },
+        Value::String(s) => s.parse::<i64>().unwrap_or(0),
         Value::None => 0,
     }
 }
@@ -453,6 +459,7 @@ fn to_bool(v: &Value) -> bool {
     match v {
         Value::Bool(b) => *b,
         Value::Int(i) => *i != 0,
+        Value::String(s) => !s.is_empty(),
         Value::None => false,
     }
 }
@@ -460,6 +467,7 @@ fn eq_vals(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Bool(x), Value::Bool(y)) => x == y,
+        (Value::String(x), Value::String(y)) => x == y,
         (Value::None, Value::None) => true,
         _ => false,
     }
@@ -468,6 +476,7 @@ fn display_value(v: &Value) -> String {
     match v {
         Value::Int(i) => i.to_string(),
         Value::Bool(b) => b.to_string(),
+        Value::String(s) => s.clone(),
         Value::None => "None".into(),
     }
 }
@@ -488,6 +497,7 @@ mod tests {
     fn make_test_module() -> Module {
         Module {
             consts: vec![],
+            string_pool: vec![],
             globals: vec![],
             symbols: vec![],
             functions: vec![],

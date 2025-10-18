@@ -23,6 +23,7 @@ where
             select! {
                 Token::Int(i) => Expr::Literal(Literal::Int(i)),
                 Token::Bool(b) => Expr::Literal(Literal::Bool(b)),
+                Token::String(s) => Expr::Literal(Literal::String(s)),
                 Token::None => Expr::Literal(Literal::None),
             }
             .labelled("literal"),

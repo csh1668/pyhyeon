@@ -152,6 +152,10 @@ impl Compiler {
         match &expr.0 {
             Expr::Literal(Literal::Int(i)) => fun.code.push(I::ConstI64(*i)),
             Expr::Literal(Literal::Bool(b)) => fun.code.push(if *b { I::True } else { I::False }),
+            Expr::Literal(Literal::String(s)) => {
+                let str_id = get_or_add_string(&mut self.module, s.clone());
+                fun.code.push(I::ConstStr(str_id));
+            }
             Expr::Literal(Literal::None) => fun.code.push(I::None),
             Expr::Variable(name) => {
                 let gid = self.sym_id(name);
@@ -396,6 +400,10 @@ impl Compiler {
         match &expr.0 {
             Expr::Literal(Literal::Int(i)) => fun.code.push(I::ConstI64(*i)),
             Expr::Literal(Literal::Bool(b)) => fun.code.push(if *b { I::True } else { I::False }),
+            Expr::Literal(Literal::String(s)) => {
+                let str_id = get_or_add_string(&mut self.module, s.clone());
+                fun.code.push(I::ConstStr(str_id));
+            }
             Expr::Literal(Literal::None) => fun.code.push(I::None),
             Expr::Variable(name) => {
                 if let Some(ix) = locals.get(name) {
@@ -535,6 +543,19 @@ fn patch_rel(ins: &mut I, rel: i32) {
 
 fn patch_chain(ins: &mut I, rel: i32) {
     patch_rel(ins, rel);
+}
+
+fn get_or_add_string(module: &mut Module, s: String) -> u32 {
+    if let Some(idx) = module
+        .string_pool
+        .iter()
+        .position(|x| x == &s) {
+        idx as u32
+    } else {
+        let id = module.string_pool.len() as u32;
+        module.string_pool.push(s);
+        id
+    }
 }
 
 fn builtin_id(name: &str) -> Option<u8> {

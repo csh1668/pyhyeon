@@ -17,6 +17,7 @@ pub enum Token {
     None,
     Bool(bool),
     Int(i64),
+    String(String),
     Identifier(String),
     // Operators and punctuation
     Plus,
@@ -64,6 +65,7 @@ impl Display for Token {
             Token::Bool(true) => write!(f, "True"),
             Token::Bool(false) => write!(f, "False"),
             Token::Int(i) => write!(f, "{}", i),
+            Token::String(s) => write!(f, "\"{}\"", s),
             Token::Identifier(name) => write!(f, "{}", name),
 
             // Operators and punctuation

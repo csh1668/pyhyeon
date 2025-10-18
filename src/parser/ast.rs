@@ -7,6 +7,7 @@ pub type ExprS = Spanned<Expr>;
 pub enum Literal {
     Bool(bool),
     Int(i64),
+    String(String),
     None,
 }
 

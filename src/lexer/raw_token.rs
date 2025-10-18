@@ -32,6 +32,10 @@ pub enum RawToken {
     Bool(bool),
     #[regex(r"[0-9]+", lex_integer)]
     Int(i64),
+    #[regex(r#""([^"\\]|\\.)*""#, lex_string)]
+    #[regex(r#"'([^'\\]|\\.)*'"#, lex_string)]
+    String(String),
+
     #[regex(r"\p{XID_Start}\p{XID_Continue}*", lex_identifier)]
     Identifier(String),
 
@@ -80,7 +84,42 @@ fn lex_integer(lexer: &mut logos::Lexer<RawToken>) -> Option<i64> {
     slice.parse::<i64>().ok()
 }
 
+fn lex_string(lexer: &mut logos::Lexer<RawToken>) -> Option<String> {
+    let slice = lexer.slice();
+    let unquoted = &slice[1..slice.len() - 1];
+    Some(process_string_escapes(unquoted))
+}
+
 fn lex_identifier(lexer: &mut logos::Lexer<RawToken>) -> Option<String> {
     let slice = lexer.slice();
     Some(slice.to_string())
+}
+
+fn process_string_escapes(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => {
+                if let Some(escaped) = chars.next() {
+                    match escaped {
+                        'n' => result.push('\n'),
+                        't' => result.push('\t'),
+                        'r' => result.push('\r'),
+                        '\\' => result.push('\\'),
+                        '"' => result.push('"'),
+                        '\'' => result.push('\''),
+                        other => {
+                            result.push('\\');
+                            result.push(other);
+                        }
+                    }
+                } else {
+                    result.push('\\');
+                }
+            }
+            other => result.push(other),
+        }
+    };
+    result
 }

@@ -1,16 +1,18 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Value {
     Int(i64),
     Bool(bool),
+    String(String),
     None,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Instruction {
     // constants
     ConstI64(i64),
+    ConstStr(u32),
     True,
     False,
     None,
@@ -61,8 +63,9 @@ pub struct FunctionCode {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Module {
     pub consts: Vec<Value>,
-    pub globals: Vec<Option<Value>>, // indexed by symbol id
-    pub symbols: Vec<String>,        // symbol id -> name (debug/lookup aid)
+    pub string_pool: Vec<String>,       // string id -> string
+    pub globals: Vec<Option<Value>>,    // indexed by symbol id
+    pub symbols: Vec<String>,           // symbol id -> name (debug/lookup aid)
     pub functions: Vec<FunctionCode>,
 }
 
