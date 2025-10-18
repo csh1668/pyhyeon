@@ -98,12 +98,34 @@ function App() {
         base: 'vs-dark',
         inherit: true,
         rules: [
+          // 주석 - 녹색, 이탤릭
           { token: 'comment', foreground: '6a9955', fontStyle: 'italic' },
-          { token: 'keyword', foreground: 'c586c0' },
+          
+          // 키워드 - 보라색
+          { token: 'keyword', foreground: 'c586c0', fontStyle: 'bold' },
+          
+          // 상수 (True, False, None) - 파란색
+          { token: 'constant', foreground: '569cd6', fontStyle: 'bold' },
+          
+          // 내장 함수 - 노란색
+          { token: 'builtin', foreground: 'dcdcaa' },
+          
+          // 숫자 - 연한 녹색
           { token: 'number', foreground: 'b5cea8' },
+          
+          // 문자열 - 주황색
           { token: 'string', foreground: 'ce9178' },
+          { token: 'string.escape', foreground: 'd7ba7d' },
+          { token: 'string.invalid', foreground: 'f44747' },
+          
+          // 연산자 - 흰색
           { token: 'operator', foreground: 'd4d4d4' },
-          { token: 'delimiter', foreground: 'cccccc' },
+          
+          // 구분자 (괄호, 콜론 등) - 밝은 회색
+          { token: 'delimiter', foreground: 'd4d4d4' },
+          { token: 'delimiter.parenthesis', foreground: 'ffd700' },
+          
+          // 식별자 - 하늘색
           { token: 'identifier', foreground: '9cdcfe' },
         ],
         colors: {
@@ -125,22 +147,103 @@ function App() {
         },
       })
 
-      // 언어 등록(간단 Monarch)
+      // 언어 등록 (Monarch tokenizer)
       monaco.languages.register({ id: 'pyh' })
       monaco.languages.setMonarchTokensProvider('pyh', {
-        keywords: ['if','elif','else','while','def','return','and','or','not','None','True','False'],
-        operators: ['+','-','*','//','%','==','!=','<','<=','>','>=','='],
+        // 현재 pyhyeon에 구현된 키워드들
+        keywords: [
+          'if', 'elif', 'else', 'while', 'def', 'return', 
+          'and', 'or', 'not'
+        ],
+        
+        // 상수 키워드
+        constants: ['None', 'True', 'False'],
+        
+        // 내장 함수들
+        builtins: ['print', 'input', 'int', 'bool', 'str', 'len'],
+        
+        // 연산자들
+        operators: [
+          '=', '==', '!=', '<', '<=', '>', '>=',
+          '+', '-', '*', '//', '%'
+        ],
+        
+        // 구분자들
+        delimiters: ['(', ')', ':', ',', ';'],
+        
         tokenizer: {
           root: [
-            [/#[^\n]*/, 'comment'],
+            // 주석 (# 으로 시작)
+            [/#.*$/, 'comment'],
+            
+            // 문자열 리터럴 (큰따옴표, 작은따옴표)
+            [/"([^"\\]|\\.)*$/, 'string.invalid'],  // 닫히지 않은 문자열
+            [/'([^'\\]|\\.)*$/, 'string.invalid'],  // 닫히지 않은 문자열
+            [/"/, 'string', '@string_double'],
+            [/'/, 'string', '@string_single'],
+            
+            // 숫자 (정수만 지원)
             [/\d+/, 'number'],
-            [/==|!=|<=|>=|\/\/|[%+\-*<>=]/, 'operator'],
-            [/\b(if|elif|else|while|def|return|and|or|not|None|True|False)\b/, 'keyword'],
-            [/\(|\)|\:|\,|\;/, 'delimiter'],
-            [/\p{XID_Start}\p{XID_Continue}*/u, 'identifier'],
+            
+            // 키워드, 상수, 내장함수, 식별자
+            [/[a-zA-Z_]\w*/, {
+              cases: {
+                '@keywords': 'keyword',
+                '@constants': 'constant',
+                '@builtins': 'builtin',
+                '@default': 'identifier'
+              }
+            }],
+            
+            // 연산자
+            [/==|!=|<=|>=|\/\/|[+\-*%<>=]/, 'operator'],
+            
+            // 구분자
+            [/[()\:,;]/, 'delimiter'],
+            
+            // 공백
+            [/[ \t\r\n]+/, 'white'],
+          ],
+          
+          // 큰따옴표 문자열 처리
+          string_double: [
+            [/[^\\"]+/, 'string'],
+            [/\\./, 'string.escape'],
+            [/"/, 'string', '@pop'],
+          ],
+          
+          // 작은따옴표 문자열 처리
+          string_single: [
+            [/[^\\']+/, 'string'],
+            [/\\./, 'string.escape'],
+            [/'/, 'string', '@pop'],
           ],
         },
       } as any)
+
+      // 괄호 매칭 설정
+      monaco.languages.setLanguageConfiguration('pyh', {
+        brackets: [
+          ['(', ')'],
+        ],
+        autoClosingPairs: [
+          { open: '(', close: ')' },
+          { open: '"', close: '"' },
+          { open: "'", close: "'" },
+        ],
+        surroundingPairs: [
+          { open: '(', close: ')' },
+          { open: '"', close: '"' },
+          { open: "'", close: "'" },
+        ],
+        comments: {
+          lineComment: '#',
+        },
+        indentationRules: {
+          increaseIndentPattern: /^.*:\s*$/,
+          decreaseIndentPattern: /^(.*\s*)?$/,
+        },
+      })
 
       instance = monaco.editor.create(editorRef.current!, {
         value: 'def fib(n):\n  if n < 2:\n    return n\n  return fib(n-1) + fib(n-2)\n\nprint(fib(10))\n',
@@ -157,12 +260,47 @@ function App() {
         cursorBlinking: 'smooth',
         cursorSmoothCaretAnimation: 'on',
         smoothScrolling: true,
-        hover: {
+        
+        // 향상된 편집 기능
+        bracketPairColorization: {
           enabled: true,
-          delay: 300,
-          sticky: true,
-          above: false, // Prefer showing hover below the line
         },
+        matchBrackets: 'always',
+        autoClosingBrackets: 'always',
+        autoClosingQuotes: 'always',
+        autoIndent: 'full',
+        formatOnType: true,
+        formatOnPaste: true,
+        
+        // 제안 및 힌트 기능 (문서 내 단어 기반 자동완성만 활성화)
+        quickSuggestions: {
+          other: true,
+          comments: false,
+          strings: false,
+        },
+        suggestOnTriggerCharacters: false,
+        acceptSuggestionOnCommitCharacter: true,
+        acceptSuggestionOnEnter: 'on',
+        tabCompletion: 'on',
+        wordBasedSuggestions: 'currentDocument',  // 현재 문서의 단어 기반 자동완성
+        
+        // 호버 기능 비활성화
+        hover: {
+          enabled: false,
+        },
+        
+        // 파라미터 힌트 비활성화
+        parameterHints: {
+          enabled: false,
+        },
+        
+        // 기타 UI 개선
+        folding: true,
+        foldingStrategy: 'indentation',
+        showFoldingControls: 'mouseover',
+        occurrencesHighlight: 'singleFile',
+        selectionHighlight: true,
+        renderWhitespace: 'selection',
       })
       setEditor(instance)
 
