@@ -51,14 +51,6 @@ fn main() -> io::Result<()> {
             continue;
         }
 
-        println!("-- interpreter --");
-        let t0 = Instant::now();
-        if let Err(diag) = lib::run_interpreter(&program) {
-            eprint!("{}", diag.format(&path_str, &src, "Runtime Error", 5));
-        }
-        let interp_ms = t0.elapsed().as_millis();
-        println!("[interp] {} ms", interp_ms);
-
         println!("-- vm --");
         let t1 = Instant::now();
         let module = lib::compile_to_module(&program);

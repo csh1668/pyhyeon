@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 /// E2E 통합 테스트: tests/programs/ 디렉터리의 모든 .pyh 파일을
-/// Interpreter와 VM으로 실행하여 출력 결과를 비교합니다.
+/// VM으로 실행하여 정상 동작을 확인합니다.
 
 fn get_test_programs() -> Vec<PathBuf> {
     let test_dir = PathBuf::from("tests/programs");
@@ -25,7 +25,7 @@ fn get_test_programs() -> Vec<PathBuf> {
     programs
 }
 
-fn run_test_program(path: &PathBuf) -> Result<(String, String), String> {
+fn run_test_program(path: &PathBuf) -> Result<String, String> {
     let source = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let path_str = path.to_string_lossy().to_string();
 
@@ -50,18 +50,6 @@ fn run_test_program(path: &PathBuf) -> Result<(String, String), String> {
         )
     })?;
 
-    // Run with interpreter (capture output)
-    let interp_io = BufferIo::new();
-    if let Err(diag) = pyhyeon::run_interpreter_with_io(&program, interp_io) {
-        return Err(format!(
-            "Interpreter error in {}: {}",
-            path_str,
-            diag.format(&path_str, &source, "Runtime Error", 0)
-        ));
-    }
-    // interpreter의 io는 소유권이 이동되어서 출력을 가져올 수 없으므로, 일단 skip
-    let interp_output = String::new();
-
     // Compile and run with VM (capture output)
     let mut module = pyhyeon::compile_to_module(&program);
     let mut vm = pyhyeon::Vm::new();
@@ -72,7 +60,7 @@ fn run_test_program(path: &PathBuf) -> Result<(String, String), String> {
     }
     let vm_output = vm_io.take_output();
 
-    Ok((interp_output, vm_output))
+    Ok(vm_output)
 }
 
 #[test]
@@ -92,10 +80,9 @@ fn test_e2e_all_programs() {
         print!("Testing {}... ", name);
 
         match run_test_program(&path) {
-            Ok((_interp_out, _vm_out)) => {
+            Ok(_vm_out) => {
                 println!("✓ PASSED");
                 passed += 1;
-                // Note: interpreter 출력 캡처는 소유권 문제로 현재 스킵
             }
             Err(err) => {
                 println!("✗ ERROR: {}", err);

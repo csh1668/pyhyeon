@@ -1,5 +1,4 @@
 pub mod builtins;
-pub mod interpreter;
 pub mod lexer;
 pub mod parser;
 pub mod runtime_io;
@@ -87,30 +86,6 @@ pub fn analyze(program: &[parser::ast::StmtS]) -> Result<(), Diagnostic> {
     }
 }
 
-pub fn run_interpreter(program: &[parser::ast::StmtS]) -> Result<(), Diagnostic> {
-    let mut interp = interpreter::Interpreter::new();
-    match interp.run(program) {
-        Ok(_) => Ok(()),
-        Err(e) => Err(Diagnostic {
-            message: e.message,
-            span: e.span,
-        }),
-    }
-}
-
-pub fn run_interpreter_with_io<IO: runtime_io::RuntimeIo>(
-    program: &[parser::ast::StmtS],
-    io: IO,
-) -> Result<(), Diagnostic> {
-    let mut interp = interpreter::Interpreter::with_io(io);
-    match interp.run(program) {
-        Ok(_) => Ok(()),
-        Err(e) => Err(Diagnostic {
-            message: e.message,
-            span: e.span,
-        }),
-    }
-}
 
 pub fn compile_to_module(program: &[parser::ast::StmtS]) -> vm::bytecode::Module {
     let compiler = vm::Compiler::new();

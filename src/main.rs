@@ -2,19 +2,9 @@ use pyhyeon as lib;
 use std::env;
 
 fn main() {
-    // engine selection: default interpreter; override with --engine=vm or --engine=interp
-    let mut engine = String::from("interp");
-    for arg in env::args().skip(1) {
-        if arg == "--engine=vm" {
-            engine = "vm".into();
-        }
-        if arg == "--engine=interp" {
-            engine = "interp".into();
-        }
-    }
-    // subcommands per plan.md: run/repl/compile/exec (minimal: run/compile/exec)
+    // Subcommands: run/compile/exec/repl
     // Usage examples:
-    //   pyh run program.pyh [--engine=vm|interp]
+    //   pyh run program.pyh
     //   pyh compile program.pyh -o out.pyhb
     //   pyh exec out.pyhb
     let mut args = env::args().skip(1).collect::<Vec<String>>();
@@ -31,7 +21,6 @@ fn main() {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            s if s.starts_with("--engine=") => { /* already handled */ }
             "-o" => {
                 if i + 1 < args.len() {
                     out_path = Some(args[i + 1].clone());
@@ -71,17 +60,9 @@ fn main() {
                 );
                 return;
             }
-            match engine.as_str() {
-                "vm" => {
-                    let module = lib::compile_to_module(&program);
-                    lib::exec_vm_module(module);
-                }
-                _ => {
-                    if let Err(diag) = lib::run_interpreter(&program) {
-                        eprint!("{}", diag.format(path, &src, "Runtime Error", 5));
-                    }
-                }
-            }
+            // VM only
+            let module = lib::compile_to_module(&program);
+            lib::exec_vm_module(module);
         }
         "compile" => {
             let program = match lib::parse_source(&src) {

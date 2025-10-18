@@ -8,6 +8,7 @@ use super::{SemanticError, SemanticResult};
 enum Ty {
     Int,
     Bool,
+    String,
     NoneType,
     Unknown,
 }
@@ -230,6 +231,7 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
         Expr::Literal(lit) => Ok(match lit {
             crate::parser::ast::Literal::Bool(_) => Ty::Bool,
             crate::parser::ast::Literal::Int(_) => Ty::Int,
+            crate::parser::ast::Literal::String(_) => Ty::String,
             crate::parser::ast::Literal::None => Ty::NoneType,
         }),
         Expr::Variable(name) => Ok(tenv.get(name).unwrap_or(Ty::Unknown)),
