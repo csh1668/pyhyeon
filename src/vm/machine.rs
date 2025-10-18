@@ -1,6 +1,6 @@
 use super::bytecode::{
-    BUILTIN_BOOL_ID, BUILTIN_INPUT_ID, BUILTIN_INT_ID, BUILTIN_PRINT_ID, Instruction as I, Module,
-    Value,
+    BUILTIN_BOOL_ID, BUILTIN_INPUT_ID, BUILTIN_INT_ID, BUILTIN_PRINT_ID, BUILTIN_STR_ID, BUILTIN_LEN_ID,
+    Instruction as I, Module, Value,
 };
 use crate::runtime_io::RuntimeIo;
 use std::collections::VecDeque;
@@ -161,16 +161,44 @@ impl Vm {
                     *slot = Some(v);
                 }
                 I::Add => {
-                    let (b, a) = (self.pop_int()?, self.pop_int()?);
-                    self.push(Value::Int(a.wrapping_add(b)))?;
+                    // let (b, a) = (self.pop_int()?, self.pop_int()?);
+                    // self.push(Value::Int(a.wrapping_add(b)))?;
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    let result = match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => Value::Int(x.wrapping_add(y)),
+                        (Value::String(x), Value::String(y)) => Value::String(x + &y),
+                        _ => {
+                            return Err(err(
+                                VmErrorKind::TypeError("add"),
+                                "unsupported types for addition".into(),
+                            ));
+                        }
+                    };
+                    self.push(result)?;
                 }
                 I::Sub => {
                     let (b, a) = (self.pop_int()?, self.pop_int()?);
                     self.push(Value::Int(a.wrapping_sub(b)))?;
                 }
                 I::Mul => {
-                    let (b, a) = (self.pop_int()?, self.pop_int()?);
-                    self.push(Value::Int(a.wrapping_mul(b)))?;
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    let result = match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => Value::Int(x.wrapping_mul(y)),
+                        (Value::String(s), Value::Int(n)) | (Value::Int(n), Value::String(s)) => {
+                            if n < 0 {
+                                Value::String(String::new())
+                            } else {
+                                Value::String(s.repeat(n as usize))
+                            }
+                        }
+                        _ => {
+                            return Err(err(
+                                VmErrorKind::TypeError("multiply"),
+                                "unsupported types for multiplication".into(),
+                            ));
+                        }
+                    };
+                    self.push(result)?;
                 }
                 I::Div => {
                     let (b, a) = (self.pop_int()?, self.pop_int()?);
@@ -209,20 +237,60 @@ impl Vm {
                     self.push(Value::Bool(!eq_vals(&a, &b)))?;
                 }
                 I::Lt => {
-                    let (b, a) = (self.pop_int()?, self.pop_int()?);
-                    self.push(Value::Bool(a < b))?;
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    let result = match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x < y,
+                        (Value::String(x), Value::String(y)) => x < y,
+                        _ => {
+                            return Err(err(
+                                VmErrorKind::TypeError("compare"),
+                                "cannot compare different types".into(),
+                            ));
+                        }
+                    };
+                    self.push(Value::Bool(result))?;
                 }
                 I::Le => {
-                    let (b, a) = (self.pop_int()?, self.pop_int()?);
-                    self.push(Value::Bool(a <= b))?;
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    let result = match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x <= y,
+                        (Value::String(x), Value::String(y)) => x <= y,
+                        _ => {
+                            return Err(err(
+                                VmErrorKind::TypeError("compare"),
+                                "cannot compare different types".into(),
+                            ));
+                        }
+                    };
+                    self.push(Value::Bool(result))?;
                 }
                 I::Gt => {
-                    let (b, a) = (self.pop_int()?, self.pop_int()?);
-                    self.push(Value::Bool(a > b))?;
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    let result = match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x > y,
+                        (Value::String(x), Value::String(y)) => x > y,
+                        _ => {
+                            return Err(err(
+                                VmErrorKind::TypeError("compare"),
+                                "cannot compare different types".into(),
+                            ));
+                        }
+                    };
+                    self.push(Value::Bool(result))?;
                 }
                 I::Ge => {
-                    let (b, a) = (self.pop_int()?, self.pop_int()?);
-                    self.push(Value::Bool(a >= b))?;
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    let result = match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x >= y,
+                        (Value::String(x), Value::String(y)) => x >= y,
+                        _ => {
+                            return Err(err(
+                                VmErrorKind::TypeError("compare"),
+                                "cannot compare different types".into(),
+                            ));
+                        }
+                    };
+                    self.push(Value::Bool(result))?;
                 }
                 I::Not => {
                     let a = self.pop_bool()?;
@@ -284,13 +352,8 @@ impl Vm {
                             let line = io
                                 .read_line()
                                 .map_err(|e| err(VmErrorKind::TypeError("io"), e))?;
-                            let parsed = line.trim().parse::<i64>().map_err(|_| {
-                                err(
-                                    VmErrorKind::TypeError("parse"),
-                                    "input() expects an integer line".into(),
-                                )
-                            })?;
-                            self.push(Value::Int(parsed))?;
+                            // Return the line as a string (trimmed)
+                            self.push(Value::String(line.trim().to_string()))?;
                         }
                         BUILTIN_INT_ID => {
                             if argc != 1 {
@@ -320,6 +383,54 @@ impl Vm {
                             }
                             let v = self.pop()?;
                             self.push(Value::Bool(to_bool(&v)))?;
+                        }
+                        BUILTIN_STR_ID => {
+                            if argc != 1 {
+                                return Err(err(
+                                    VmErrorKind::ArityError {
+                                        expected: 1,
+                                        got: argc,
+                                    },
+                                    format!(
+                                        "str() takes 1 positional argument but {} given",
+                                        argc
+                                    ),
+                                ));
+                            }
+                            let v = self.pop()?;
+                            let s = match v {
+                                Value::Int(i) => i.to_string(),
+                                Value::Bool(b) => (if b { "True" } else { "False" }).to_string(),
+                                Value::String(s) => s,
+                                Value::None => "None".to_string(),
+                            };
+                            self.push(Value::String(s))?;
+                        }
+                        BUILTIN_LEN_ID => {
+                            if argc != 1 {
+                                return Err(err(
+                                    VmErrorKind::ArityError {
+                                        expected: 1,
+                                        got: argc,
+                                    },
+                                    format!(
+                                        "len() takes 1 positional argument but {} given",
+                                        argc
+                                    ),
+                                ));
+                            }
+                            let v = self.pop()?;
+                            match v {
+                                Value::String(s) => {
+                                    self.push(Value::Int(s.chars().count() as i64))?;
+                                }
+                                _ => {
+                                    return Err(err(
+                                        VmErrorKind::TypeError("len"),
+                                        "len() requires a string".into(),
+                                    ));
+                                }
+                            }
                         }
                         _ => {
                             return Err(err(

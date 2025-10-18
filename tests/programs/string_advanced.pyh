@@ -1,0 +1,40 @@
+# String advanced operations test
+
+# str() builtin
+x = 42
+s = str(x)
+print(s)
+
+# len() builtin
+text = "hello"
+length = len(text)
+print(length)
+
+# len() with empty string
+empty = ""
+print(len(empty))
+
+# String concatenation and length
+s1 = "hello"
+s2 = " world"
+combined = s1 + s2
+print(combined)
+print(len(combined))
+
+# String repetition
+repeated = "abc" * 2
+print(repeated)
+print(len(repeated))
+
+# Convert bool to string
+b = True
+bs = str(b)
+print(bs)
+
+# String comparison
+if "abc" < "def":
+  print("abc is less than def")
+
+if "hello" == "hello":
+  print("strings are equal")
+

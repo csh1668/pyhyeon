@@ -27,7 +27,17 @@ const BOOL: Builtin = Builtin {
     params: &["x"],
 };
 
-static REGISTRY: &[Builtin] = &[PRINT, INPUT, INT, BOOL];
+const STR: Builtin = Builtin {
+    name: "str",
+    params: &["x"],
+};
+
+const LEN: Builtin = Builtin {
+    name: "len",
+    params: &["x"],
+};
+
+static REGISTRY: &[Builtin] = &[PRINT, INPUT, INT, BOOL, STR, LEN];
 
 pub fn all() -> &'static [Builtin] {
     REGISTRY

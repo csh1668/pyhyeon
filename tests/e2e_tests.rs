@@ -103,84 +103,33 @@ fn test_e2e_all_programs() {
 
 // Individual program tests for specific cases
 
-#[test]
-fn test_arith() {
-    let path = PathBuf::from("tests/programs/arith.pyh");
-    if !path.exists() {
-        println!("Skipping test_arith: file not found");
-        return;
-    }
+macro_rules! test_program {
+    ($test_name:ident, $filename:literal) => {
+        #[test]
+        fn $test_name() {
+            let path = PathBuf::from(concat!("tests/programs/", $filename));
+            if !path.exists() {
+                println!("Skipping {}: file not found", stringify!($test_name));
+                return;
+            }
 
-    let result = run_test_program(&path);
-    assert!(result.is_ok(), "arith.pyh should execute successfully: {:?}", result.err());
+            let result = run_test_program(&path);
+            assert!(
+                result.is_ok(),
+                "{} should execute successfully: {:?}",
+                $filename,
+                result.err()
+            );
+        }
+    };
 }
 
-#[test]
-fn test_fib_iter() {
-    let path = PathBuf::from("tests/programs/fib_iter.pyh");
-    if !path.exists() {
-        println!("Skipping test_fib_iter: file not found");
-        return;
-    }
-
-    let result = run_test_program(&path);
-    assert!(
-        result.is_ok(),
-        "fib_iter.pyh should execute successfully: {:?}", result.err()
-    );
-}
-
-#[test]
-fn test_func_rec() {
-    let path = PathBuf::from("tests/programs/func_rec.pyh");
-    if !path.exists() {
-        println!("Skipping test_func_rec: file not found");
-        return;
-    }
-
-    let result = run_test_program(&path);
-    assert!(
-        result.is_ok(),
-        "func_rec.pyh should execute successfully: {:?}", result.err()
-    );
-}
-
-#[test]
-fn test_loops() {
-    let path = PathBuf::from("tests/programs/loops.pyh");
-    if !path.exists() {
-        println!("Skipping test_loops: file not found");
-        return;
-    }
-
-    let result = run_test_program(&path);
-    assert!(result.is_ok(), "loops.pyh should execute successfully: {:?}", result.err());
-}
-
-#[test]
-fn test_branch() {
-    let path = PathBuf::from("tests/programs/branch.pyh");
-    if !path.exists() {
-        println!("Skipping test_branch: file not found");
-        return;
-    }
-
-    let result = run_test_program(&path);
-    assert!(result.is_ok(), "branch.pyh should execute successfully: {:?}", result.err());
-}
-
-#[test]
-fn test_short_circuit() {
-    let path = PathBuf::from("tests/programs/short_circuit.pyh");
-    if !path.exists() {
-        println!("Skipping test_short_circuit: file not found");
-        return;
-    }
-
-    let result = run_test_program(&path);
-    assert!(
-        result.is_ok(),
-        "short_circuit.pyh should execute successfully: {:?}", result.err()
-    );
-}
-
+// Generate tests for each program
+test_program!(test_arith, "arith.pyh");
+test_program!(test_fib_iter, "fib_iter.pyh");
+test_program!(test_func_rec, "func_rec.pyh");
+test_program!(test_loops, "loops.pyh");
+test_program!(test_branch, "branch.pyh");
+test_program!(test_short_circuit, "short_circuit.pyh");
+test_program!(test_string_basics, "string_basics.pyh");
+test_program!(test_string_advanced, "string_advanced.pyh");

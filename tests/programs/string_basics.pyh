@@ -1,0 +1,32 @@
+# String basic operations test
+
+# Basic string literals
+s1 = "hello"
+s2 = 'world'
+print(s1)
+print(s2)
+
+# String concatenation
+s3 = s1 + " " + s2
+print(s3)
+
+# String comparison
+if s1 == "hello":
+  print("equal")
+
+if s1 != s2:
+  print("not equal")
+
+# String repetition
+s4 = "ab" * 3
+print(s4)
+
+# Empty string
+empty = ""
+if empty == "":
+  print("empty string works")
+
+# String with escapes
+escaped = "line1\nline2\ttab"
+print(escaped)
+

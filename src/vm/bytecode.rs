@@ -73,3 +73,5 @@ pub const BUILTIN_PRINT_ID: u8 = 0;
 pub const BUILTIN_INPUT_ID: u8 = 1;
 pub const BUILTIN_INT_ID: u8 = 2;
 pub const BUILTIN_BOOL_ID: u8 = 3;
+pub const BUILTIN_STR_ID: u8 = 4;
+pub const BUILTIN_LEN_ID: u8 = 5;

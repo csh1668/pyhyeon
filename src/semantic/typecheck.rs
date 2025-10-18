@@ -246,16 +246,44 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
             let tl = tc_expr(left, tenv, ctx)?;
             let tr = tc_expr(right, tenv, ctx)?;
             match op {
-                BinaryOp::Add
-                | BinaryOp::Subtract
-                | BinaryOp::Multiply
+                BinaryOp::Add => match (tl, tr) {
+                    (Ty::Int, Ty::Int) => Ok(Ty::Int),
+                    (Ty::String, Ty::String) => Ok(Ty::String),
+                    (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Int),
+                    (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::String),
+                    (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
+                    _ => Err(SemanticError {
+                        message: format!("TypeError: unsupported operand types for +: {:?} and {:?}", tl, tr),
+                        span: expr.1.clone(),
+                    })
+                }
+                BinaryOp::Multiply => match (tl, tr) {
+                    (Ty::Int, Ty::Int) => Ok(Ty::Int),
+                    (Ty::String, Ty::Int) | (Ty::Int, Ty::String) => Ok(Ty::String),
+                    (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Int),
+                    (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::String),
+                    (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
+                    _ => Err(SemanticError {
+                        message: format!("TypeError: unsupported operand types for *: {:?} and {:?}", tl, tr),
+                        span: expr.1.clone(),
+                    })
+                }
+                BinaryOp::Subtract
                 | BinaryOp::FloorDivide
                 | BinaryOp::Modulo => expect_int_pair(tl, tr, expr.1.clone()).map(|_| Ty::Int),
                 BinaryOp::Less
                 | BinaryOp::LessEqual
                 | BinaryOp::Greater
-                | BinaryOp::GreaterEqual => {
-                    expect_int_pair(tl, tr, expr.1.clone()).map(|_| Ty::Bool)
+                | BinaryOp::GreaterEqual => match (tl, tr) {
+                    (Ty::Int, Ty::Int) => Ok(Ty::Bool),
+                    (Ty::String, Ty::String) => Ok(Ty::Bool),
+                    (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Bool),
+                    (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::Bool),
+                    (Ty::Unknown, Ty::Unknown) => Ok(Ty::Bool),
+                    _ => Err(SemanticError {
+                        message: format!("TypeError: cannot compare {:?} and {:?}", tl, tr),
+                        span: expr.1.clone(),
+                    })
                 }
                 BinaryOp::Equal | BinaryOp::NotEqual => {
                     expect_same_or_unknown(tl, tr, expr.1.clone()).map(|_| Ty::Bool)
@@ -281,7 +309,7 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                         let _ = tc_expr(&args[0], tenv, ctx)?;
                         Ok(Ty::NoneType)
                     }
-                    "input" => Ok(Ty::Int),
+                    "input" => Ok(Ty::String),
                     "int" => {
                         let _ = tc_expr(&args[0], tenv, ctx)?;
                         Ok(Ty::Int)
@@ -289,6 +317,20 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                     "bool" => {
                         let _ = tc_expr(&args[0], tenv, ctx)?;
                         Ok(Ty::Bool)
+                    }
+                    "str" => {
+                        let _ = tc_expr(&args[0], tenv, ctx)?;
+                        Ok(Ty::String)
+                    }
+                    "len" => {
+                        let arg_ty = tc_expr(&args[0], tenv, ctx)?;
+                        if arg_ty != Ty::String && arg_ty != Ty::Unknown {
+                            return Err(SemanticError {
+                                message: format!("TypeError: len() requires a string, got {:?}", arg_ty),
+                                span: expr.1.clone(),
+                            });
+                        }
+                        Ok(Ty::Int)
                     }
                     _ => Ok(Ty::Unknown),
                 }

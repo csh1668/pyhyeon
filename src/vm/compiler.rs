@@ -564,6 +564,8 @@ fn builtin_id(name: &str) -> Option<u8> {
         "input" => Some(1),
         "int" => Some(2),
         "bool" => Some(3),
+        "str" => Some(4),
+        "len" => Some(5),
         _ => None,
     }
 }

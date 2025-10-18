@@ -1,8 +1,0 @@
-def f():
-  x = 1
-  if False:
-    y = 2
-  return x + y
-
-a = None
-print(f())

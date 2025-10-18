@@ -14,12 +14,12 @@
 
 ## 🎯 Overview
 
-Pyhyeon is a toy programming language implementing Python's core syntax. It provides a complete language implementation pipeline: Lexer, Parser, Semantic Analyzer, Interpreter, Bytecode Compiler, and VM.
+Pyhyeon is a toy programming language implementing Python's core syntax. It provides a complete language implementation pipeline: Lexer, Parser, Semantic Analyzer, Bytecode Compiler, and Stack-based VM.
 
 ### ✨ Features
 
-- ✅ **Complete Compiler Pipeline**: Lexing → Parsing → Semantic Analysis → Execution
-- ✅ **Dual Execution Engines**: Tree-walking Interpreter & Stack-based VM
+- ✅ **Complete Compiler Pipeline**: Lexing → Parsing → Semantic Analysis → Bytecode VM Execution
+- ✅ **Stack-based Virtual Machine**: Efficient bytecode execution engine
 - ✅ **Python-style Syntax**: Indentation-based blocks, functions, control flow
 - ✅ **Type Safety**: Static semantic analysis and type checking
 - ✅ **Friendly Error Messages**: Ariadne-based error reporting
@@ -69,29 +69,32 @@ cargo build --release
 ### Usage
 
 ```bash
-# Run with interpreter
-cargo run --release -- run examples/fib.pyh
-
-# Run with VM (faster)
-cargo run --release -- run examples/fib.pyh --engine=vm
+# Run a program (compiles and executes with VM)
+cargo run --release --bin pyhyeon -- run test.pyh
 
 # Compile to bytecode
-cargo run --release -- compile examples/fib.pyh -o fib.pyhb
+cargo run --release --bin pyhyeon -- compile test.pyh -o test.pyhb
 
 # Execute compiled bytecode
-cargo run --release -- exec fib.pyhb
+cargo run --release --bin pyhyeon -- exec test.pyhb
 ```
 
 ## 📚 Language Features
 
 ### Data Types
-- `int` (64-bit integer)
-- `bool` (`True`, `False`)
-- `None`
+- `int` - 64-bit signed integer
+- `bool` - Boolean (`True`, `False`)
+- `str` - String literals with `"` or `'`
+  - Escape sequences: `\n`, `\t`, `\r`, `\\`, `\"`, `\'`
+  - Unicode support (UTF-8)
+- `None` - Null value
 
 ### Operators
 - **Arithmetic**: `+`, `-`, `*`, `//` (floor division), `%`
+  - String concatenation: `"hello" + " world"`
+  - String repetition: `"ab" * 3` → `"ababab"`
 - **Comparison**: `==`, `!=`, `<`, `>`, `<=`, `>=`
+  - Lexicographic string comparison supported
 - **Logical**: `and`, `or`, `not` (with short-circuit evaluation)
 - **Unary**: `+`, `-`, `not`
 
@@ -101,10 +104,12 @@ cargo run --release -- exec fib.pyhb
 - Function definitions (`def`) with recursion support
 
 ### Built-in Functions
-- `print(x)` - Output
-- `input()` - Integer input
-- `int(x)` - Integer conversion
-- `bool(x)` - Boolean conversion
+- `print(x)` - Output a value
+- `input()` - Read a line from stdin (returns string)
+- `int(x)` - Convert to integer
+- `bool(x)` - Convert to boolean
+- `str(x)` - Convert to string
+- `len(s)` - Get string length (character count)
 
 **More features will be added soon!**
 
@@ -118,23 +123,20 @@ Lexer (logos) → Token Stream
 Parser (chumsky) → AST
     ↓
 Semantic Analyzer → Validated AST
-    ↓        ↓
-Interpreter  Compiler → Bytecode (.pyhb)
-    ↓        ↓
-  Execute    VM → Execute
+    ↓
+Compiler → Bytecode (.pyhb)
+    ↓
+VM → Execute
 ```
 
 ## 🧪 Testing
 
 ```bash
-# Unit tests
+# Run all tests (unit + E2E)
 cargo test
 
-# Integration tests (performance comparison)
-cargo run --release --bin pyh-tests
-
-# Test specific program
-cargo run --release --bin pyh-tests fib
+# Run E2E tests only
+cargo test --test e2e_tests
 ```
 
 ## 🌐 Web Playground
