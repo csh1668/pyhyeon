@@ -284,9 +284,11 @@ function App() {
         tabCompletion: 'on',
         wordBasedSuggestions: 'currentDocument',  // 현재 문서의 단어 기반 자동완성
         
-        // 호버 기능 비활성화
+        // 호버 기능 (에러 설명 표시)
         hover: {
-          enabled: false,
+          enabled: true,
+          delay: 300,
+          sticky: true,
         },
         
         // 파라미터 힌트 비활성화
