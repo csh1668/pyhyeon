@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as monaco from 'monaco-editor'
-import { Github, Play, Loader2 } from 'lucide-react'
+import { Github, Play, Loader2, StopCircle, Send, Terminal, Code2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { initWasm } from './lib/utils'
-import { analyze as wasmAnalyze, run as wasmRun } from '@pkg/pyhyeon'
+import { 
+  analyze as wasmAnalyze,
+  start_program,
+  provide_input,
+  stop_program
+} from '@pkg/pyhyeon'
 import { AnsiUp } from 'ansi_up'
+
+type VmState = 'idle' | 'running' | 'waiting_for_input' | 'finished' | 'error'
 
 function App() {
   const editorRef = useRef<HTMLDivElement>(null)
@@ -14,6 +21,10 @@ function App() {
   const [editorWidth, setEditorWidth] = useState<number>(60) // 60% default
   const [isResizing, setIsResizing] = useState(false)
   const [wasmReady, setWasmReady] = useState(false)
+  const [vmState, setVmState] = useState<VmState>('idle')
+  const [inputValue, setInputValue] = useState<string>('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const outputEndRef = useRef<HTMLDivElement>(null)
   
   // ANSI to HTML converter
   const ansiUp = useMemo(() => new AnsiUp(), [])
@@ -129,9 +140,9 @@ function App() {
           { token: 'identifier', foreground: '9cdcfe' },
         ],
         colors: {
-          'editor.background': '#0a0a0a',
+          'editor.background': '#00000000', // 완전 투명
           'editor.foreground': '#fafafa',
-          'editor.lineHighlightBackground': '#14141410',
+          'editor.lineHighlightBackground': '#ffffff08',
           'editorLineNumber.foreground': '#4a4a4a',
           'editorLineNumber.activeForeground': '#9a9a9a',
           'editor.selectionBackground': '#2a2a2a',
@@ -246,7 +257,7 @@ function App() {
       })
 
       instance = monaco.editor.create(editorRef.current!, {
-        value: 'def fib(n):\n  if n < 2:\n    return n\n  return fib(n-1) + fib(n-2)\n\nprint(fib(10))\n',
+        value: '# Interactive input example\nname = input()\nprint("Hello, " + name + "!")\n\nage = int(input())\nprint("You are " + str(age) + " years old.")\n',
         language: 'pyh',
         theme: 'pyhyeon-dark',
         automaticLayout: true,
@@ -313,11 +324,18 @@ function App() {
         }
         
         const code = instance!.getValue()
+        setOutput('')
+        setVmState('running')
+        
         try {
-          const out = wasmRun(code)
-          setOutput(out || 'Program executed successfully with no output.')
+          const result = start_program(code)
+          const { state, output: newOutput } = result as { state: string; output: string }
+          
+          setOutput(newOutput)
+          setVmState(state as VmState)
         } catch (e) {
           setOutput(`${e}`)
+          setVmState('error')
           console.error('Run error:', e)
         }
       })
@@ -349,77 +367,213 @@ function App() {
     }
   }, [autoAnalyze, wasmReady])
 
+  // Auto-scroll to bottom when output changes
+  useEffect(() => {
+    if (outputEndRef.current) {
+      outputEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [output])
+
+  // Focus input when waiting for input
+  useEffect(() => {
+    if (vmState === 'waiting_for_input' && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [vmState])
+
   const onRun = () => {
     if (!editor || !wasmReady) {
       return
     }
     
     const code = editor.getValue()
+    setOutput('')
+    setVmState('running')
+    
     try {
-      const out = wasmRun(code)
-      setOutput(out || 'Program executed successfully with no output.')
+      const result = start_program(code)
+      const { state, output: newOutput } = result as { state: string; output: string }
+      
+      setOutput(newOutput)
+      setVmState(state as VmState)
     } catch (e) {
       setOutput(`${e}`)
+      setVmState('error')
       console.error('Run error:', e)
     }
   }
 
+  const onStop = () => {
+    try {
+      stop_program()
+      setVmState('idle')
+      setOutput(prev => prev + '\n[Program stopped]')
+    } catch (e) {
+      console.error('Stop error:', e)
+    }
+  }
+
+  const onSendInput = () => {
+    if (!inputValue.trim() || vmState !== 'waiting_for_input') {
+      return
+    }
+
+    try {
+      const result = provide_input(inputValue)
+      const { state, output: newOutput } = result as { state: string; output: string }
+      
+      setOutput(prev => prev + newOutput)
+      setVmState(state as VmState)
+      setInputValue('')
+    } catch (e) {
+      setOutput(prev => prev + `\nError: ${e}`)
+      setVmState('error')
+      console.error('Input error:', e)
+    }
+  }
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      onSendInput()
+    }
+  }
+
   return (
-    <div className="app-root">
-      <header className="app-header">
+    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black relative overflow-hidden">
+      {/* Lighting effects */}
+      <div className="absolute inset-0 bg-gradient-radial from-blue-900/20 via-transparent to-transparent opacity-50 pointer-events-none" />
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+      
+      {/* Header */}
+      <header className="relative z-10 border-b border-gray-800/50 bg-black/30 backdrop-blur-md px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="brand text-xl font-bold">Pyhyeon Playground</div>
+          <div className="flex items-center gap-2">
+            <Code2 className="w-8 h-8 text-blue-400" />
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              Pyhyeon
+            </h1>
+          </div>
+          <div className="text-sm text-gray-400">
+            Playground
+          </div>
         </div>
         <nav className="flex items-center gap-4">
           <a 
             href="https://github.com/csh1668/pyhyeon" 
             target="_blank" 
             rel="noreferrer" 
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
             aria-label="GitHub"
           >
             <Github className="w-5 h-5" />
           </a>
         </nav>
       </header>
-      
-      <main className="workspace" style={{ gridTemplateColumns: `${editorWidth}% 4px ${100 - editorWidth}%` }}>
-        <div className="editor-section">
-          <div className="editor-container">
-            <div className="editor-pane" ref={editorRef} />
-            <Button 
-              onClick={onRun}
-              className="floating-run-button bg-green-600 hover:bg-green-700"
-              size="sm"
-              title="Run code (or press Ctrl+Enter)"
-              disabled={!wasmReady}
-            >
-              {wasmReady ? (
-                <>
-                  <Play className="w-4 h-4 mr-1" />
-                  Run
-                </>
-              ) : (
-                <>
-                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                  Loading...
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-        
+
+      {/* Main workspace */}
+      <main className="relative z-10 h-[calc(100vh-80px)] flex">
+        {/* Editor section */}
         <div 
-          className={`resize-handle ${isResizing ? 'resizing' : ''}`}
+          className="flex flex-col bg-black/20 backdrop-blur-md border-r border-gray-800/50"
+          style={{ width: `${editorWidth}%` }}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800/50 bg-black/10">
+            <div className="flex items-center gap-2 text-sm text-gray-300">
+              <Code2 className="w-4 h-4" />
+              main.pyh
+            </div>
+            {vmState === 'running' || vmState === 'waiting_for_input' ? (
+              <Button 
+                onClick={onStop}
+                className="bg-red-600 hover:bg-red-700 text-white"
+                size="sm"
+                title="Stop program"
+              >
+                <StopCircle className="w-4 h-4 mr-2" />
+                Stop
+              </Button>
+            ) : (
+              <Button 
+                onClick={onRun}
+                className="bg-green-600 hover:bg-green-700 text-white"
+                size="sm"
+                disabled={!wasmReady}
+                title="Run code (or press Ctrl+Enter)"
+              >
+                {wasmReady ? (
+                  <>
+                    <Play className="w-4 h-4 mr-2" />
+                    Run (Ctrl+Enter)
+                  </>
+                ) : (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Loading...
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+          <div className="flex-1" ref={editorRef} />
+        </div>
+
+        {/* Resize handle */}
+        <div 
+          className={`w-1 bg-gray-700/50 hover:bg-blue-500/50 cursor-col-resize transition-colors ${
+            isResizing ? 'bg-blue-500/70' : ''
+          }`}
           onMouseDown={handleMouseDown}
         />
-        
-        <div className="output-section">
-          <div className="section-header">
-            <span className="text-sm font-medium">Output</span>
-          </div>
-          <div className="output-container">
-            <pre className="output-content" dangerouslySetInnerHTML={{ __html: outputHtml }} />
+
+        {/* Right panel */}
+        <div 
+          className="flex flex-col bg-black/20 backdrop-blur-md"
+          style={{ width: `${100 - editorWidth}%` }}
+        >
+          {/* Output section */}
+          <div className="flex-1 flex flex-col">
+            <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-300 border-b border-gray-800/30 bg-black/10">
+              <Terminal className="w-4 h-4" />
+              Output
+              {vmState === 'waiting_for_input' && (
+                <span className="text-xs text-yellow-500 ml-2">Waiting for input...</span>
+              )}
+              {vmState === 'running' && (
+                <span className="text-xs text-blue-500 ml-2 flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Running...
+                </span>
+              )}
+            </div>
+            <div className="flex-1 p-4 flex flex-col">
+              <div className="flex-1 bg-black/20 p-4 rounded-lg border border-gray-800/50 overflow-auto backdrop-blur-sm">
+                <pre className="text-sm text-gray-100 font-mono whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: outputHtml || 'Run your code to see output here...' }} />
+                <div ref={outputEndRef} />
+              </div>
+              {vmState === 'waiting_for_input' && (
+                <div className="mt-4 flex gap-2">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={handleInputKeyDown}
+                    placeholder="Enter input..."
+                    className="flex-1 px-3 py-2 bg-black/20 backdrop-blur-sm border border-gray-700 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                  <Button
+                    onClick={onSendInput}
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700"
+                    disabled={!inputValue.trim()}
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </main>

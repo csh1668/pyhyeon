@@ -1,0 +1,3 @@
+age = input()
+print("나이: " + age)
+

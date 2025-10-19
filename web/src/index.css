@@ -260,3 +260,10 @@
   max-height: 300px !important;
   overflow-y: auto !important;
 }
+
+/* Custom gradient utilities */
+@layer utilities {
+  .bg-gradient-radial {
+    background-image: radial-gradient(var(--tw-gradient-stops));
+  }
+}

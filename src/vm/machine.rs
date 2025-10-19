@@ -3,8 +3,6 @@ use super::bytecode::{
     Instruction as I, Module, Value,
 };
 use crate::runtime_io::RuntimeIo;
-use std::collections::VecDeque;
-use crate::runtime_io;
 
 #[derive(Debug)]
 pub enum VmErrorKind {
@@ -24,16 +22,25 @@ pub struct VmError {
 
 pub type VmResult<T> = Result<T, VmError>;
 
+/// VM execution state
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VmState {
+    Running,
+    WaitingForInput,
+    Finished,
+    Error,
+}
+
 fn err(kind: VmErrorKind, message: String) -> VmError {
     VmError { kind, message }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Frame {
-    ip: usize,
-    func_id: usize,
-    ret_stack_size: usize,
-    locals: Vec<Value>,
+    pub ip: usize,
+    pub func_id: usize,
+    pub ret_stack_size: usize,
+    pub locals: Vec<Value>,
 }
 
 pub struct Vm {
@@ -41,10 +48,7 @@ pub struct Vm {
     pub frames: Vec<Frame>,
     pub max_stack: usize,
     pub max_frames: usize,
-    // When present, capture output from builtins like print instead of writing to stdout
-    pub out: Option<String>,
-    // Optional queued input lines consumed by input() builtin (web/interactive)
-    pub input: VecDeque<String>,
+    pub state: VmState,
 }
 
 impl Vm {
@@ -54,28 +58,34 @@ impl Vm {
             frames: Vec::with_capacity(32),
             max_stack: 1024,
             max_frames: 256,
-            out: None,
-            input: VecDeque::new(),
+            state: VmState::Running,
         }
     }
 
-    /// Enable capturing of printed output into an internal buffer (used by Web/WASM)
-    pub fn enable_capture(&mut self) {
-        self.out = Some(String::new());
+    /// Get current VM state
+    pub fn get_state(&self) -> VmState {
+        self.state.clone()
     }
 
-    /// Take and clear the captured output buffer
-    pub fn take_output(&mut self) -> Option<String> {
-        self.out.take()
+    /// Reset VM state to Running (e.g., after providing input)
+    pub fn resume(&mut self) {
+        if self.state == VmState::WaitingForInput {
+            self.state = VmState::Running;
+        }
     }
 
-    /// Push a line of input to be consumed by input() builtin
-    pub fn push_input_line<S: Into<String>>(&mut self, line: S) {
-        self.input.push_back(line.into());
+    /// Check if VM is waiting for input
+    pub fn is_waiting_for_input(&self) -> bool {
+        self.state == VmState::WaitingForInput
+    }
+
+    /// Check if VM has finished execution
+    pub fn is_finished(&self) -> bool {
+        self.state == VmState::Finished || self.frames.is_empty()
     }
 
     pub fn run(&mut self, module: &mut Module) -> VmResult<Option<Value>> {
-        let mut stdio = runtime_io::StdIo {};
+        let mut stdio = crate::runtime_io::StdIo;
         self.run_with_io(module, &mut stdio)
     }
 
@@ -88,7 +98,10 @@ impl Vm {
         if module.functions.is_empty() {
             return Ok(None);
         }
-        self.enter_func(module, 0, 0)?;
+        // Only enter the main function if we haven't started yet
+        if self.frames.is_empty() {
+            self.enter_func(module, 0, 0)?;
+        }
         loop {
             let (func_id, ip, code_len) = {
                 let f = match self.frames.last() {
@@ -101,6 +114,7 @@ impl Vm {
             if ip >= code_len {
                 let ret = self.leave_frame()?;
                 if self.frames.is_empty() {
+                    self.state = VmState::Finished;
                     return Ok(ret);
                 }
                 if let Some(v) = ret {
@@ -337,23 +351,55 @@ impl Vm {
                             self.push(Value::None)?;
                         }
                         BUILTIN_INPUT_ID => {
-                            if argc != 0 {
+                            if argc > 1 {
                                 return Err(err(
                                     VmErrorKind::ArityError {
-                                        expected: 0,
+                                        expected: 1,
                                         got: argc,
                                     },
                                     format!(
-                                        "input() takes 0 positional arguments but {} given",
+                                        "input() takes at most 1 positional argument but {} given",
                                         argc
                                     ),
                                 ));
                             }
-                            let line = io
-                                .read_line()
-                                .map_err(|e| err(VmErrorKind::TypeError("io"), e))?;
-                            // Return the line as a string (trimmed)
-                            self.push(Value::String(line.trim().to_string()))?;
+                            
+                            // If there's a prompt argument, output it first
+                            if argc == 1 {
+                                let prompt = self.pop()?;
+                                match prompt {
+                                    Value::String(s) => {
+                                        io.write(&s);
+                                    }
+                                    _ => {
+                                        return Err(err(
+                                            VmErrorKind::TypeError("input"),
+                                            "prompt must be a string".to_string(),
+                                        ));
+                                    }
+                                }
+                            }
+                            
+                            use crate::runtime_io::ReadResult;
+                            match io.read_line() {
+                                ReadResult::Ok(line) => {
+                                    // Return the line as a string (trimmed)
+                                    self.push(Value::String(line.trim().to_string()))?;
+                                    self.state = VmState::Running;
+                                }
+                                ReadResult::WaitingForInput => {
+                                    // Mark VM as waiting for input and return
+                                    self.state = VmState::WaitingForInput;
+                                    // Don't advance IP - we'll retry this instruction when input arrives
+                                    if let Some(f) = self.frames.last_mut() {
+                                        f.ip -= 1;
+                                    }
+                                    return Ok(None);
+                                }
+                                ReadResult::Error(e) => {
+                                    return Err(err(VmErrorKind::TypeError("io"), e));
+                                }
+                            }
                         }
                         BUILTIN_INT_ID => {
                             if argc != 1 {
@@ -443,6 +489,7 @@ impl Vm {
                 I::Return => {
                     let ret = self.leave_frame()?;
                     if self.frames.is_empty() {
+                        self.state = VmState::Finished;
                         return Ok(ret);
                     } else if let Some(v) = ret {
                         self.push(v)?;
@@ -450,6 +497,7 @@ impl Vm {
                 }
             }
         }
+        self.state = VmState::Finished;
         Ok(None)
     }
 
@@ -1075,3 +1123,4 @@ mod tests {
         }
     }
 }
+

@@ -293,14 +293,25 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
         }
         Expr::Call { func_name, args } => {
             if let Some(bi) = crate::builtins::lookup(func_name) {
-                if bi.arity() != args.len() {
-                    return Err(SemanticError {
-                        message: format!(
+                if args.len() < bi.min_arity() || args.len() > bi.max_arity() {
+                    let msg = if bi.min_arity() == bi.max_arity() {
+                        format!(
                             "ArityError: {} takes {} positional argument(s) but {} given",
                             bi.name,
                             bi.arity(),
                             args.len()
-                        ),
+                        )
+                    } else {
+                        format!(
+                            "ArityError: {} takes {}-{} positional argument(s) but {} given",
+                            bi.name,
+                            bi.min_arity(),
+                            bi.max_arity(),
+                            args.len()
+                        )
+                    };
+                    return Err(SemanticError {
+                        message: msg,
                         span: expr.1.clone(),
                     });
                 }
@@ -309,7 +320,19 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                         let _ = tc_expr(&args[0], tenv, ctx)?;
                         Ok(Ty::NoneType)
                     }
-                    "input" => Ok(Ty::String),
+                    "input" => {
+                        // input() or input(prompt)
+                        if args.len() == 1 {
+                            let arg_ty = tc_expr(&args[0], tenv, ctx)?;
+                            if arg_ty != Ty::String && arg_ty != Ty::Unknown {
+                                return Err(SemanticError {
+                                    message: format!("TypeError: input() prompt must be a string, got {:?}", arg_ty),
+                                    span: expr.1.clone(),
+                                });
+                            }
+                        }
+                        Ok(Ty::String)
+                    }
                     "int" => {
                         let _ = tc_expr(&args[0], tenv, ctx)?;
                         Ok(Ty::Int)

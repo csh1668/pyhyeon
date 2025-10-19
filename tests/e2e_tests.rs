@@ -26,6 +26,10 @@ fn get_test_programs() -> Vec<PathBuf> {
 }
 
 fn run_test_program(path: &PathBuf) -> Result<String, String> {
+    run_test_program_with_input(path, &[])
+}
+
+fn run_test_program_with_input(path: &PathBuf, inputs: &[&str]) -> Result<String, String> {
     let source = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let path_str = path.to_string_lossy().to_string();
 
@@ -55,6 +59,11 @@ fn run_test_program(path: &PathBuf) -> Result<String, String> {
     let mut vm = pyhyeon::Vm::new();
     let mut vm_io = BufferIo::new();
 
+    // Add input lines
+    for input in inputs {
+        vm_io.push_input_line(*input);
+    }
+
     if let Err(err) = vm.run_with_io(&mut module, &mut vm_io) {
         return Err(format!("VM error in {}: {:?}", path_str, err));
     }
@@ -62,6 +71,7 @@ fn run_test_program(path: &PathBuf) -> Result<String, String> {
 
     Ok(vm_output)
 }
+
 
 #[test]
 fn test_e2e_all_programs() {
@@ -101,18 +111,13 @@ fn test_e2e_all_programs() {
     assert_eq!(failed, 0, "Some E2E tests failed");
 }
 
-// Individual program tests for specific cases
-
 macro_rules! test_program {
     ($test_name:ident, $filename:literal) => {
         #[test]
         fn $test_name() {
+            let _ = include_str!(concat!("programs/", $filename));
+            
             let path = PathBuf::from(concat!("tests/programs/", $filename));
-            if !path.exists() {
-                println!("Skipping {}: file not found", stringify!($test_name));
-                return;
-            }
-
             let result = run_test_program(&path);
             assert!(
                 result.is_ok(),
@@ -120,6 +125,51 @@ macro_rules! test_program {
                 $filename,
                 result.err()
             );
+        }
+    };
+
+    ($test_name:ident, $filename:literal, inputs = [$($input:literal),*]) => {
+        #[test]
+        fn $test_name() {
+            let _ = include_str!(concat!("programs/", $filename));
+            
+            let path = PathBuf::from(concat!("tests/programs/", $filename));
+            let inputs = vec![$($input),*];
+            let result = run_test_program_with_input(&path, &inputs);
+            assert!(
+                result.is_ok(),
+                "{} should execute successfully: {:?}",
+                $filename,
+                result.err()
+            );
+        }
+    };
+
+    ($test_name:ident, $filename:literal, inputs = [$($input:literal),*], contains = [$($expected:literal),*]) => {
+        #[test]
+        fn $test_name() {
+            let _ = include_str!(concat!("programs/", $filename));
+            
+            let path = PathBuf::from(concat!("tests/programs/", $filename));
+            let inputs = vec![$($input),*];
+            let result = run_test_program_with_input(&path, &inputs);
+            
+            match result {
+                Ok(output) => {
+                    $(
+                        assert!(
+                            output.contains($expected),
+                            "{}: output should contain '{}'\nActual output:\n{}",
+                            $filename,
+                            $expected,
+                            output
+                        );
+                    )*
+                }
+                Err(err) => {
+                    panic!("{} should execute successfully: {:?}", $filename, err);
+                }
+            }
         }
     };
 }
@@ -133,3 +183,33 @@ test_program!(test_branch, "branch.pyh");
 test_program!(test_short_circuit, "short_circuit.pyh");
 test_program!(test_string_basics, "string_basics.pyh");
 test_program!(test_string_advanced, "string_advanced.pyh");
+test_program!(
+    test_input_with_prompt,
+    "input_with_prompt.pyh",
+    inputs = ["철수"],
+    contains = ["이름을 입력하세요: ", "안녕하세요, 철수님!"]
+);
+test_program!(
+    test_input_without_prompt,
+    "input_without_prompt.pyh",
+    inputs = ["25"],
+    contains = ["나이: 25"]
+);
+test_program!(
+    test_input_multiple,
+    "input_multiple.pyh",
+    inputs = ["Alice", "30"],
+    contains = ["Name: ", "Age: ", "Alice is 30 years old"]
+);
+test_program!(
+    test_input_int_conversion,
+    "input_int_conversion.pyh",
+    inputs = ["10", "20"],
+    contains = ["Enter a number: ", "Enter another number: ", "Sum: 30"]
+);
+test_program!(
+    test_input_in_loop,
+    "input_in_loop.pyh",
+    inputs = ["Alice", "Bob", "Charlie"],
+    contains = ["Hello, Alice", "Hello, Bob", "Hello, Charlie"]
+);

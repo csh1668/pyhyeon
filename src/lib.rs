@@ -119,6 +119,18 @@ mod wasm_api {
     use super::*;
     use serde::Serialize;
     use wasm_bindgen::prelude::*;
+    use std::cell::RefCell;
+
+    /// VM execution session
+    struct VmSession {
+        vm: vm::Vm,
+        module: vm::bytecode::Module,
+        io: runtime_io::BufferIo,
+    }
+
+    thread_local! {
+        static ACTIVE_SESSION: RefCell<Option<VmSession>> = RefCell::new(None);
+    }
 
     #[derive(Serialize)]
     pub struct WasmDiagnostic {
@@ -128,6 +140,12 @@ mod wasm_api {
         pub end_line: u32,
         pub end_char: u32,
         pub severity: u8,
+    }
+
+    #[derive(Serialize)]
+    pub struct VmStateInfo {
+        pub state: String,  // "running", "waiting_for_input", "finished", "error"
+        pub output: String,
     }
 
     fn byte_to_lc(src: &str, byte_idx: usize) -> (u32, u32) {
@@ -238,12 +256,151 @@ mod wasm_api {
         result
     }
 
-    /// Push a line into the VM input queue (to be consumed by input()).
+    /// Start a new program execution (interactive mode)
     #[wasm_bindgen]
-    pub fn push_input(_session: u32, line: &str) {
-        // Simple single-VM model for now: keep a global VM later if session needed
-        let _ = _session;
-        // No-op placeholder; advanced interactive session will manage VM instance lifecycle.
-        let _ = line;
+    pub fn start_program(src: &str) -> JsValue {
+        let src = if src.ends_with('\n') {
+            src.to_string()
+        } else {
+            format!("{}\n", src)
+        };
+
+        // Parse
+        let program = match super::parse_source(&src) {
+            Ok(p) => p,
+            Err(diagnostics) => {
+                let mut output = String::new();
+                for diag in diagnostics {
+                    output.push_str(&diag.format("<mem>", &src, "Parsing failed", 3));
+                }
+                return serde_wasm_bindgen::to_value(&VmStateInfo {
+                    state: "error".to_string(),
+                    output,
+                }).unwrap();
+            }
+        };
+
+        // Semantic analysis
+        if let Err(diag) = super::analyze(&program) {
+            return serde_wasm_bindgen::to_value(&VmStateInfo {
+                state: "error".to_string(),
+                output: diag.format("<mem>", &src, "Semantic Analyzing Failed", 4),
+            }).unwrap();
+        }
+
+        // Compile
+        let module = super::compile_to_module(&program);
+        let vm = super::vm::Vm::new();
+        let io = super::runtime_io::BufferIo::new();
+
+        // Start execution
+        let session = VmSession { vm, module, io };
+        ACTIVE_SESSION.with(|s| {
+            *s.borrow_mut() = Some(session);
+        });
+
+        // Run until we need input or finish
+        step_program()
+    }
+
+    /// Continue program execution (step)
+    #[wasm_bindgen]
+    pub fn step_program() -> JsValue {
+        ACTIVE_SESSION.with(|s| {
+            let mut session_opt = s.borrow_mut();
+            if let Some(ref mut session) = *session_opt {
+                match session.vm.run_with_io(&mut session.module, &mut session.io) {
+                    Ok(_) => {
+                        serde_wasm_bindgen::to_value(&VmStateInfo {
+                            state: vm_state_to_string(session.vm.get_state()).to_string(),
+                            output: session.io.drain_output(),
+                        }).unwrap()
+                    }
+                    Err(err) => {
+                        serde_wasm_bindgen::to_value(&VmStateInfo {
+                            state: "error".to_string(),
+                            output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
+                        }).unwrap()
+                    }
+                }
+            } else {
+                serde_wasm_bindgen::to_value(&VmStateInfo {
+                    state: "error".to_string(),
+                    output: "No active program".to_string(),
+                }).unwrap()
+            }
+        })
+    }
+
+    /// Provide input to the running program
+    #[wasm_bindgen]
+    pub fn provide_input(line: &str) -> JsValue {
+        ACTIVE_SESSION.with(|s| {
+            let mut session_opt = s.borrow_mut();
+            if let Some(ref mut session) = *session_opt {
+                // Add input to the buffer
+                session.io.push_input_line(line.to_string());
+                // Resume execution
+                session.vm.resume();
+                
+                // Continue execution
+                match session.vm.run_with_io(&mut session.module, &mut session.io) {
+                    Ok(_) => {
+                        serde_wasm_bindgen::to_value(&VmStateInfo {
+                            state: vm_state_to_string(session.vm.get_state()).to_string(),
+                            output: session.io.drain_output(),
+                        }).unwrap()
+                    }
+                    Err(err) => {
+                        serde_wasm_bindgen::to_value(&VmStateInfo {
+                            state: "error".to_string(),
+                            output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
+                        }).unwrap()
+                    }
+                }
+            } else {
+                serde_wasm_bindgen::to_value(&VmStateInfo {
+                    state: "error".to_string(),
+                    output: "No active program".to_string(),
+                }).unwrap()
+            }
+        })
+    }
+
+    /// Get current VM state and output
+    #[wasm_bindgen]
+    pub fn get_vm_state() -> JsValue {
+        ACTIVE_SESSION.with(|s| {
+            let mut session_opt = s.borrow_mut();
+            if let Some(ref mut session) = *session_opt {
+                serde_wasm_bindgen::to_value(&VmStateInfo {
+                    state: vm_state_to_string(session.vm.get_state()).to_string(),
+                    output: session.io.drain_output(),
+                }).unwrap()
+            } else {
+                serde_wasm_bindgen::to_value(&VmStateInfo {
+                    state: "error".to_string(),
+                    output: "No active program".to_string(),
+                }).unwrap()
+            }
+        })
+    }
+
+    /// Stop the running program
+    #[wasm_bindgen]
+    pub fn stop_program() {
+        ACTIVE_SESSION.with(|s| {
+            *s.borrow_mut() = None;
+        });
+    }
+
+    // Helper function to convert VmState to string
+    fn vm_state_to_string(state: vm::machine::VmState) -> &'static str {
+        match state {
+            vm::machine::VmState::Running => "running",
+            vm::machine::VmState::WaitingForInput => "waiting_for_input",
+            vm::machine::VmState::Finished => "finished",
+            vm::machine::VmState::Error => "error",
+        }
     }
 }
