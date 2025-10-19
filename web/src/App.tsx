@@ -250,10 +250,18 @@ function App() {
         comments: {
           lineComment: '#',
         },
-        indentationRules: {
-          increaseIndentPattern: /^.*:\s*$/,
-          decreaseIndentPattern: /^(.*\s*)?$/,
-        },
+        onEnterRules: [
+          {
+            // 콜론(:)으로 끝나는 라인에서 엔터를 누르면 2칸 들여쓰기
+            beforeText: /^\s*.*:\s*$/,
+            action: { indentAction: monaco.languages.IndentAction.Indent }
+          },
+          {
+            // 일반 라인에서 엔터를 누르면 현재 들여쓰기 유지
+            beforeText: /.+$/,
+            action: { indentAction: monaco.languages.IndentAction.None }
+          }
+        ],
       })
 
       instance = monaco.editor.create(editorRef.current!, {
@@ -271,6 +279,11 @@ function App() {
         cursorBlinking: 'smooth',
         cursorSmoothCaretAnimation: 'on',
         smoothScrolling: true,
+        
+        // 들여쓰기 설정 (2칸)
+        tabSize: 2,
+        insertSpaces: true,
+        detectIndentation: false,
         
         // 향상된 편집 기능
         bracketPairColorization: {
