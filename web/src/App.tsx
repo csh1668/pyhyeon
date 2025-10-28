@@ -81,7 +81,10 @@ function App() {
     
     const model = editorInstance.getModel()
     if (!model) return
-    const src = model.getValue()
+    let src = model.getValue()
+    if (!src.endsWith('\n')) {
+      src += '\n'
+    }
 
     try {
       const diags: any[] = (wasmAnalyze as any)(src) || []
