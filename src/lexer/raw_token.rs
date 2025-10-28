@@ -23,6 +23,8 @@ pub enum RawToken {
     Or,
     #[token("not")]
     Not,
+    #[token("class")]
+    Class,
 
     // Identifiers and literals
     #[token("None")]
@@ -36,7 +38,7 @@ pub enum RawToken {
     #[regex(r#"'([^'\\]|\\.)*'"#, lex_string)]
     String(String),
 
-    #[regex(r"\p{XID_Start}\p{XID_Continue}*", lex_identifier)]
+    #[regex(r"[_\p{XID_Start}]\p{XID_Continue}*", lex_identifier)]
     Identifier(String),
 
     // Operators and punctuation
@@ -74,6 +76,8 @@ pub enum RawToken {
     Comma,
     #[token(";")]
     Semicolon,
+    #[token(".")]
+    Dot,
 
     #[token("\n")]
     Newline,
@@ -120,6 +124,6 @@ fn process_string_escapes(s: &str) -> String {
             }
             other => result.push(other),
         }
-    };
+    }
     result
 }

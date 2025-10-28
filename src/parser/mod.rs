@@ -11,6 +11,12 @@ pub use chumsky::span::SimpleSpan;
 
 type RichTokenError<'a> = Rich<'a, Token>;
 
+#[derive(Debug, Clone)]
+enum PostfixOp {
+    Attr(String),
+    Call(Vec<ExprS>),
+}
+
 pub fn expr_parser<'tokens, I>()
 -> impl Parser<'tokens, I, ExprS, extra::Err<RichTokenError<'tokens>>>
 where
@@ -19,7 +25,8 @@ where
     recursive(|expr| {
         let ident = select! { Token::Identifier(s) => s }.labelled("identifier");
 
-        let atom = choice((
+        // Primary: literals, variables, parenthesized expressions
+        let primary = choice((
             select! {
                 Token::Int(i) => Expr::Literal(Literal::Int(i)),
                 Token::Bool(b) => Expr::Literal(Literal::Bool(b)),
@@ -27,23 +34,56 @@ where
                 Token::None => Expr::Literal(Literal::None),
             }
             .labelled("literal"),
-            ident
-                .then(
-                    expr.clone()
-                        .separated_by(just(Token::Comma))
-                        .allow_trailing()
-                        .collect()
-                        .delimited_by(just(Token::LParen), just(Token::RParen)),
-                )
-                .map(|(func_name, args)| Expr::Call { func_name, args }),
             ident.map(Expr::Variable),
             expr.clone()
                 .delimited_by(just(Token::LParen), just(Token::RParen))
-                .map(|e| e.0), // take inner expr node; span will be overwritten below
+                .map(|e: ExprS| e.0), // take inner expr node
         ))
         .map_with(|node: Expr, e| {
             let s: I::Span = e.span();
             (node, s.into_range())
+        });
+
+        // Postfix: handles . and () chaining
+        // Example: obj.attr, obj.method(), obj.method().attr
+        let postfix_op = choice((
+            // .attr (attribute access)
+            just(Token::Dot)
+                .ignore_then(ident.clone())
+                .map(|attr| PostfixOp::Attr(attr)),
+            // (args) (function/method call)
+            expr.clone()
+                .separated_by(just(Token::Comma))
+                .allow_trailing()
+                .collect()
+                .delimited_by(just(Token::LParen), just(Token::RParen))
+                .map(|args| PostfixOp::Call(args)),
+        ));
+
+        let atom = primary.foldl(postfix_op.repeated(), |base: ExprS, op: PostfixOp| {
+            let start = base.1.start;
+            match op {
+                PostfixOp::Attr(attr) => {
+                    let end = start + attr.len(); // rough estimate
+                    (
+                        Expr::Attribute {
+                            object: Box::new(base),
+                            attr,
+                        },
+                        start..end,
+                    )
+                }
+                PostfixOp::Call(args) => {
+                    let end = start + 10; // rough estimate
+                    (
+                        Expr::Call {
+                            func_name: Box::new(base),
+                            args,
+                        },
+                        start..end,
+                    )
+                }
+            }
         });
 
         // Capture unary operator with its span
@@ -187,10 +227,17 @@ where
             .map(Stmt::Return)
             .labelled("return statement");
 
-        let assign_stmt = ident
+        let assign_stmt = expr
+            .clone()
             .then_ignore(just(Token::Equal))
             .then(expr.clone())
-            .map(|(name, value)| Stmt::Assign { name, value })
+            .map_with(|(target, value), e| {
+                let s: I::Span = e.span();
+                Stmt::Assign {
+                    target: (target.0, s.into_range()),
+                    value,
+                }
+            })
             .labelled("assignment");
 
         let expr_stmt = expr
@@ -276,8 +323,51 @@ where
             .map(|(condition, body)| Stmt::While { condition, body })
             .labelled("while statement");
 
+        // Class statement
+        let method_def = just(Token::Def)
+            .ignore_then(ident.clone())
+            .then(
+                ident
+                    .clone()
+                    .separated_by(just(Token::Comma))
+                    .allow_trailing()
+                    .collect()
+                    .delimited_by(just(Token::LParen), just(Token::RParen)),
+            )
+            .then(block.clone())
+            .map(|((name, params), body)| MethodDef { name, params, body });
+
+        let class_stmt = just(Token::Class)
+            .ignore_then(ident.clone())
+            .then_ignore(just(Token::Colon))
+            .then(
+                just(Token::Newline)
+                    .ignore_then(just(Token::Newline).ignored().repeated())
+                    .ignore_then(just(Token::Indent))
+                    .ignore_then(
+                        method_def
+                            .map_with(|m, e| {
+                                let s: I::Span = e.span();
+                                (m, s.into_range())
+                            })
+                            .repeated()
+                            .at_least(1)
+                            .collect::<Vec<(MethodDef, Span)>>(),
+                    )
+                    .then_ignore(just(Token::Dedent)),
+            )
+            .map(|(name, methods)| {
+                let methods = methods.into_iter().map(|(m, _)| m).collect();
+                Stmt::Class {
+                    name,
+                    methods,
+                    attributes: vec![], // v1에서는 클래스 속성 미지원
+                }
+            })
+            .labelled("class statement");
+
         // Compound statements occupy the whole logical line
-        let compound_stmt_line = choice((def_stmt, if_stmt, while_stmt))
+        let compound_stmt_line = choice((class_stmt, def_stmt, if_stmt, while_stmt))
             .map_with(|node: Stmt, e| {
                 let s: I::Span = e.span();
                 (node, s.into_range())
@@ -339,14 +429,16 @@ mod tests {
     fn parse_expr(source: &str) -> Result<ExprS, Vec<RichTokenError<'_>>> {
         let tokens = tokenize(source);
         let eoi_span = SimpleSpan::new(source.len(), source.len());
-        let stream = chumsky::input::Stream::from_iter(tokens.into_iter()).map(eoi_span, |(t, s)| (t, s));
+        let stream =
+            chumsky::input::Stream::from_iter(tokens.into_iter()).map(eoi_span, |(t, s)| (t, s));
         expr_parser().parse(stream).into_result()
     }
 
     fn parse_program(source: &str) -> Result<Vec<StmtS>, Vec<RichTokenError<'_>>> {
         let tokens = tokenize(source);
         let eoi_span = SimpleSpan::new(source.len(), source.len());
-        let stream = chumsky::input::Stream::from_iter(tokens.into_iter()).map(eoi_span, |(t, s)| (t, s));
+        let stream =
+            chumsky::input::Stream::from_iter(tokens.into_iter()).map(eoi_span, |(t, s)| (t, s));
         program_parser().parse(stream).into_result()
     }
 
@@ -364,11 +456,17 @@ mod tests {
     fn test_parse_literal_bool() {
         let result = parse_expr("True");
         assert!(result.is_ok());
-        assert!(matches!(result.unwrap().0, Expr::Literal(Literal::Bool(true))));
+        assert!(matches!(
+            result.unwrap().0,
+            Expr::Literal(Literal::Bool(true))
+        ));
 
         let result = parse_expr("False");
         assert!(result.is_ok());
-        assert!(matches!(result.unwrap().0, Expr::Literal(Literal::Bool(false))));
+        assert!(matches!(
+            result.unwrap().0,
+            Expr::Literal(Literal::Bool(false))
+        ));
     }
 
     #[test]
@@ -409,9 +507,18 @@ mod tests {
         let result = parse_expr("1 + 2 * 3");
         assert!(result.is_ok());
         let expr = result.unwrap();
-        if let Expr::Binary { op: BinaryOp::Add, left, right } = expr.0 {
+        if let Expr::Binary {
+            op: BinaryOp::Add,
+            left,
+            right,
+        } = expr.0
+        {
             assert!(matches!(left.0, Expr::Literal(Literal::Int(1))));
-            if let Expr::Binary { op: BinaryOp::Multiply, .. } = right.0 {
+            if let Expr::Binary {
+                op: BinaryOp::Multiply,
+                ..
+            } = right.0
+            {
                 // correct precedence
             } else {
                 panic!("Expected multiplication on right");
@@ -450,7 +557,7 @@ mod tests {
         let result = parse_expr("foo()");
         assert!(result.is_ok());
         if let Expr::Call { func_name, args } = result.unwrap().0 {
-            assert_eq!(func_name, "foo");
+            assert!(matches!(func_name.0, Expr::Variable(_)));
             assert_eq!(args.len(), 0);
         } else {
             panic!("Expected call");
@@ -462,7 +569,11 @@ mod tests {
         let result = parse_expr("add(1, 2)");
         assert!(result.is_ok());
         if let Expr::Call { func_name, args } = result.unwrap().0 {
-            assert_eq!(func_name, "add");
+            if let Expr::Variable(name) = &func_name.0 {
+                assert_eq!(name, "add");
+            } else {
+                panic!("Expected variable");
+            }
             assert_eq!(args.len(), 2);
             assert!(matches!(args[0].0, Expr::Literal(Literal::Int(1))));
             assert!(matches!(args[1].0, Expr::Literal(Literal::Int(2))));
@@ -509,8 +620,19 @@ mod tests {
         let result = parse_expr("(1 + 2) * 3");
         assert!(result.is_ok());
         // Should parse as (1+2)*3, not 1+(2*3)
-        if let Expr::Binary { op: BinaryOp::Multiply, left, right } = result.unwrap().0 {
-            assert!(matches!(left.0, Expr::Binary { op: BinaryOp::Add, .. }));
+        if let Expr::Binary {
+            op: BinaryOp::Multiply,
+            left,
+            right,
+        } = result.unwrap().0
+        {
+            assert!(matches!(
+                left.0,
+                Expr::Binary {
+                    op: BinaryOp::Add,
+                    ..
+                }
+            ));
             assert!(matches!(right.0, Expr::Literal(Literal::Int(3))));
         } else {
             panic!("Expected multiplication at top level");
@@ -526,8 +648,11 @@ mod tests {
         assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
         let stmts = result.unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Assign { name, value } = &stmts[0].0 {
-            assert_eq!(name, "x");
+        if let Stmt::Assign { target, value } = &stmts[0].0 {
+            assert!(matches!(target.0, Expr::Variable(_)));
+            if let Expr::Variable(name) = &target.0 {
+                assert_eq!(name, "x");
+            }
             assert!(matches!(value.0, Expr::Literal(Literal::Int(42))));
         } else {
             panic!("Expected assignment");
@@ -563,8 +688,20 @@ mod tests {
         assert!(result.is_ok());
         let stmts = result.unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::If { condition, then_block, elif_blocks, else_block } = &stmts[0].0 {
-            assert!(matches!(condition.0, Expr::Binary { op: BinaryOp::Greater, .. }));
+        if let Stmt::If {
+            condition,
+            then_block,
+            elif_blocks,
+            else_block,
+        } = &stmts[0].0
+        {
+            assert!(matches!(
+                condition.0,
+                Expr::Binary {
+                    op: BinaryOp::Greater,
+                    ..
+                }
+            ));
             assert_eq!(then_block.len(), 1);
             assert_eq!(elif_blocks.len(), 0);
             assert!(else_block.is_none());
@@ -587,7 +724,12 @@ else:
         assert!(result.is_ok());
         let stmts = result.unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::If { elif_blocks, else_block, .. } = &stmts[0].0 {
+        if let Stmt::If {
+            elif_blocks,
+            else_block,
+            ..
+        } = &stmts[0].0
+        {
             assert_eq!(elif_blocks.len(), 1);
             assert!(else_block.is_some());
         } else {
@@ -602,7 +744,13 @@ else:
         let stmts = result.unwrap();
         assert_eq!(stmts.len(), 1);
         if let Stmt::While { condition, body } = &stmts[0].0 {
-            assert!(matches!(condition.0, Expr::Binary { op: BinaryOp::Greater, .. }));
+            assert!(matches!(
+                condition.0,
+                Expr::Binary {
+                    op: BinaryOp::Greater,
+                    ..
+                }
+            ));
             assert_eq!(body.len(), 1);
         } else {
             panic!("Expected while statement");

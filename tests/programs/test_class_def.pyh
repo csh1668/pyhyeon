@@ -1,0 +1,8 @@
+# 클래스 정의만
+class Empty:
+  def greet(self):
+    return "hello"
+
+print("class defined")
+
+

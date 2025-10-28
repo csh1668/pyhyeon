@@ -72,7 +72,6 @@ fn run_test_program_with_input(path: &PathBuf, inputs: &[&str]) -> Result<String
     Ok(vm_output)
 }
 
-
 #[test]
 fn test_e2e_all_programs() {
     let programs = get_test_programs();
@@ -116,7 +115,7 @@ macro_rules! test_program {
         #[test]
         fn $test_name() {
             let _ = include_str!(concat!("programs/", $filename));
-            
+
             let path = PathBuf::from(concat!("tests/programs/", $filename));
             let result = run_test_program(&path);
             assert!(
@@ -132,7 +131,7 @@ macro_rules! test_program {
         #[test]
         fn $test_name() {
             let _ = include_str!(concat!("programs/", $filename));
-            
+
             let path = PathBuf::from(concat!("tests/programs/", $filename));
             let inputs = vec![$($input),*];
             let result = run_test_program_with_input(&path, &inputs);
@@ -149,11 +148,11 @@ macro_rules! test_program {
         #[test]
         fn $test_name() {
             let _ = include_str!(concat!("programs/", $filename));
-            
+
             let path = PathBuf::from(concat!("tests/programs/", $filename));
             let inputs = vec![$($input),*];
             let result = run_test_program_with_input(&path, &inputs);
-            
+
             match result {
                 Ok(output) => {
                     $(

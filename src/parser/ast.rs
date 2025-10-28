@@ -49,8 +49,12 @@ pub enum Expr {
         right: Box<ExprS>,
     },
     Call {
-        func_name: String,
+        func_name: Box<ExprS>,
         args: Vec<ExprS>,
+    },
+    Attribute {
+        object: Box<ExprS>,
+        attr: String,
     },
 }
 
@@ -73,8 +77,20 @@ pub enum Stmt {
     },
     Return(ExprS),
     Assign {
-        name: String,
+        target: ExprS,
         value: ExprS,
     },
+    Class {
+        name: String,
+        methods: Vec<MethodDef>,
+        attributes: Vec<(String, ExprS)>,
+    },
     Expr(ExprS),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MethodDef {
+    pub name: String,
+    pub params: Vec<String>,
+    pub body: Vec<StmtS>,
 }

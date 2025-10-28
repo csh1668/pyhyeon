@@ -1,0 +1,11 @@
+# attribute 할당 테스트
+class Point:
+  def __init__(self, x):
+    print("before assign")
+    self.x = x
+    print("after assign")
+
+p = Point(5)
+print("done")
+
+

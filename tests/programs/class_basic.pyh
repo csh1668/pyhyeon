@@ -1,0 +1,18 @@
+# 기본 클래스 테스트
+class Point:
+  def __init__(self, x, y):
+    self.x = x
+    self.y = y
+  
+  def get_x(self):
+    return self.x
+  
+  def get_y(self):
+    return self.y
+
+p = Point(3, 4)
+print(p.get_x())
+print(p.get_y())
+print(p.x)
+print(p.y)
+

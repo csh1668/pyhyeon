@@ -1,9 +1,10 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use super::bytecode::{FunctionCode, Instruction as I, Module};
-use crate::parser::ast::{BinaryOp, Expr, ExprS, Literal, Stmt, StmtS, UnaryOp};
+use super::bytecode::{ClassDef, FunctionCode, Instruction as I, Module};
+use crate::parser::ast::{BinaryOp, Expr, ExprS, Literal, MethodDef, Stmt, StmtS, UnaryOp};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 pub struct Compiler {
     module: Module,
@@ -51,10 +52,24 @@ impl Compiler {
 
     fn emit_stmt(&mut self, stmt: &StmtS, fun: &mut FunctionCode) {
         match &stmt.0 {
-            Stmt::Assign { name, value } => {
-                self.emit_expr(value, fun);
-                let gid = self.sym_id(name);
-                fun.code.push(I::StoreGlobal(gid));
+            Stmt::Assign { target, value } => {
+                match &target.0 {
+                    Expr::Variable(name) => {
+                        self.emit_expr(value, fun);
+                        let gid = self.sym_id(name);
+                        fun.code.push(I::StoreGlobal(gid));
+                    }
+                    Expr::Attribute { object, attr } => {
+                        self.emit_expr(object, fun);
+                        self.emit_expr(value, fun);
+                        let attr_sym = self.intern(attr);
+                        fun.code.push(I::StoreAttr(attr_sym));
+                    }
+                    _ => {
+                        // Semantic analysis should have caught this
+                        panic!("Invalid assignment target");
+                    }
+                }
             }
             Stmt::Expr(e) => {
                 self.emit_expr(e, fun);
@@ -145,7 +160,63 @@ impl Compiler {
                 f.code.push(I::Return);
                 self.module.functions[fid] = f;
             }
+            Stmt::Class { name, methods, .. } => {
+                // 각 메서드를 함수로 컴파일
+                let mut method_map = HashMap::new();
+                for method in methods {
+                    let method_func_id = self.compile_method(method).unwrap();
+                    method_map.insert(method.name.clone(), method_func_id);
+                }
+
+                // ClassDef 생성
+                let class_def = ClassDef {
+                    name: name.clone(),
+                    methods: method_map,
+                };
+
+                // Module.classes에 추가하고 global에 저장
+                let class_id = self.module.classes.len();
+                self.module.classes.push(class_def.clone());
+
+                // 클래스를 global 변수로 저장
+                let name_sym = self.intern(name);
+                let const_id = self.module.consts.len();
+                self.module
+                    .consts
+                    .push(super::bytecode::Value::UserClass(Rc::new(class_def)));
+                fun.code.push(I::LoadConst(const_id as u32));
+                fun.code.push(I::StoreGlobal(name_sym));
+            }
         }
+    }
+
+    fn compile_method(&mut self, method: &MethodDef) -> Result<u16, String> {
+        let name_sym = self.intern(&method.name);
+        let local_map = collect_locals(&method.params, &method.body);
+        let num_locals = local_map.len() as u16;
+
+        let fid = self.module.functions.len();
+        self.module.functions.push(FunctionCode {
+            name_sym,
+            arity: method.params.len() as u8,
+            num_locals,
+            code: vec![I::Return],
+        });
+
+        let mut f = FunctionCode {
+            name_sym,
+            arity: method.params.len() as u8,
+            num_locals,
+            code: vec![],
+        };
+
+        for s in &method.body {
+            self.emit_stmt_with_locals(s, &mut f, &local_map);
+        }
+        f.code.push(I::Return);
+        self.module.functions[fid] = f;
+
+        Ok(fid as u16)
     }
 
     fn emit_expr(&mut self, expr: &ExprS, fun: &mut FunctionCode) {
@@ -221,20 +292,58 @@ impl Compiler {
                 }
             }
             Expr::Call { func_name, args } => {
-                // Builtins by name
-                if let Some(bid) = builtin_id(func_name) {
+                // 특별 처리: func_name이 Attribute인 경우 → CallMethod 최적화
+                if let Expr::Attribute { object, attr } = &func_name.0 {
+                    // 메서드 호출: obj.method(args)
+                    self.emit_expr(object, fun);
+                    for arg in args {
+                        self.emit_expr(arg, fun);
+                    }
+                    let method_sym = self.intern(attr);
+                    fun.code.push(I::CallMethod(method_sym, args.len() as u8));
+                    return;
+                }
+
+                // Builtins by name (func_name이 Variable인 경우)
+                if let Expr::Variable(name) = &func_name.0 {
+                    if let Some(bid) = builtin_id(name) {
+                        for a in args {
+                            self.emit_expr(a, fun);
+                        }
+                        fun.code.push(I::CallBuiltin(bid, args.len() as u8));
+                        return;
+                    }
+                    // 클래스인지 확인
+                    let is_class = self.module.classes.iter().any(|c| c.name == *name);
+                    if is_class {
+                        // 클래스는 CallValue 사용
+                        self.emit_expr(func_name, fun);
+                        for a in args {
+                            self.emit_expr(a, fun);
+                        }
+                        fun.code.push(I::CallValue(args.len() as u8));
+                        return;
+                    }
+                    // user function: resolve to existing function id by name
+                    let fid = self.resolve_function_id(name);
                     for a in args {
                         self.emit_expr(a, fun);
                     }
-                    fun.code.push(I::CallBuiltin(bid, args.len() as u8));
+                    fun.code.push(I::Call(fid as u16, args.len() as u8));
                     return;
                 }
-                // user function: resolve to existing function id by name
-                let fid = self.resolve_function_id(func_name);
-                for a in args {
-                    self.emit_expr(a, fun);
+
+                // 일반적인 callable 호출: func_name을 평가한 후 CallValue
+                self.emit_expr(func_name, fun);
+                for arg in args {
+                    self.emit_expr(arg, fun);
                 }
-                fun.code.push(I::Call(fid as u16, args.len() as u8));
+                fun.code.push(I::CallValue(args.len() as u8));
+            }
+            Expr::Attribute { object, attr } => {
+                self.emit_expr(object, fun);
+                let attr_sym = self.intern(attr);
+                fun.code.push(I::LoadAttr(attr_sym));
             }
         }
     }
@@ -287,13 +396,27 @@ impl Compiler {
         locals: &HashMap<String, u16>,
     ) {
         match &stmt.0 {
-            Stmt::Assign { name, value } => {
-                self.emit_expr_with_locals(value, fun, locals);
-                if let Some(ix) = locals.get(name) {
-                    fun.code.push(I::StoreLocal(*ix));
-                } else {
-                    let gid = self.sym_id(name);
-                    fun.code.push(I::StoreGlobal(gid));
+            Stmt::Assign { target, value } => {
+                match &target.0 {
+                    Expr::Variable(name) => {
+                        self.emit_expr_with_locals(value, fun, locals);
+                        if let Some(ix) = locals.get(name) {
+                            fun.code.push(I::StoreLocal(*ix));
+                        } else {
+                            let gid = self.sym_id(name);
+                            fun.code.push(I::StoreGlobal(gid));
+                        }
+                    }
+                    Expr::Attribute { object, attr } => {
+                        self.emit_expr_with_locals(object, fun, locals);
+                        self.emit_expr_with_locals(value, fun, locals);
+                        let attr_sym = self.intern(attr);
+                        fun.code.push(I::StoreAttr(attr_sym));
+                    }
+                    _ => {
+                        // Semantic analysis should have caught this
+                        panic!("Invalid assignment target");
+                    }
                 }
             }
             Stmt::Expr(e) => {
@@ -388,6 +511,38 @@ impl Compiler {
                 f.code.push(I::Return);
                 self.module.functions[fid] = f;
             }
+            Stmt::Class { name, methods, .. } => {
+                // 각 메서드를 함수로 컴파일
+                let mut method_map = HashMap::new();
+                for method in methods {
+                    let method_func_id = self.compile_method(method).unwrap();
+                    method_map.insert(method.name.clone(), method_func_id);
+                }
+
+                // ClassDef 생성
+                let class_def = ClassDef {
+                    name: name.clone(),
+                    methods: method_map,
+                };
+
+                // Module.classes에 추가
+                let class_id = self.module.classes.len();
+                self.module.classes.push(class_def.clone());
+
+                // 클래스를 local/global 변수로 저장
+                let const_id = self.module.consts.len();
+                self.module
+                    .consts
+                    .push(super::bytecode::Value::UserClass(Rc::new(class_def)));
+                fun.code.push(I::LoadConst(const_id as u32));
+
+                if let Some(ix) = locals.get(name) {
+                    fun.code.push(I::StoreLocal(*ix));
+                } else {
+                    let name_sym = self.intern(name);
+                    fun.code.push(I::StoreGlobal(name_sym));
+                }
+            }
         }
     }
 
@@ -471,18 +626,47 @@ impl Compiler {
                 }
             }
             Expr::Call { func_name, args } => {
-                if let Some(bid) = builtin_id(func_name) {
+                // 특별 처리: func_name이 Attribute인 경우 → CallMethod 최적화
+                if let Expr::Attribute { object, attr } = &func_name.0 {
+                    // 메서드 호출: obj.method(args)
+                    self.emit_expr_with_locals(object, fun, locals);
+                    for arg in args {
+                        self.emit_expr_with_locals(arg, fun, locals);
+                    }
+                    let method_sym = self.intern(attr);
+                    fun.code.push(I::CallMethod(method_sym, args.len() as u8));
+                    return;
+                }
+
+                // Builtins by name (func_name이 Variable인 경우)
+                if let Expr::Variable(name) = &func_name.0 {
+                    if let Some(bid) = builtin_id(name) {
+                        for a in args {
+                            self.emit_expr_with_locals(a, fun, locals);
+                        }
+                        fun.code.push(I::CallBuiltin(bid, args.len() as u8));
+                        return;
+                    }
+                    // user function: resolve to existing function id by name
+                    let fid = self.resolve_function_id(name);
                     for a in args {
                         self.emit_expr_with_locals(a, fun, locals);
                     }
-                    fun.code.push(I::CallBuiltin(bid, args.len() as u8));
+                    fun.code.push(I::Call(fid as u16, args.len() as u8));
                     return;
                 }
-                let fid = self.resolve_function_id(func_name);
-                for a in args {
-                    self.emit_expr_with_locals(a, fun, locals);
+
+                // 일반적인 callable 호출: func_name을 평가한 후 CallValue
+                self.emit_expr_with_locals(func_name, fun, locals);
+                for arg in args {
+                    self.emit_expr_with_locals(arg, fun, locals);
                 }
-                fun.code.push(I::Call(fid as u16, args.len() as u8));
+                fun.code.push(I::CallValue(args.len() as u8));
+            }
+            Expr::Attribute { object, attr } => {
+                self.emit_expr_with_locals(object, fun, locals);
+                let attr_sym = self.intern(attr);
+                fun.code.push(I::LoadAttr(attr_sym));
             }
         }
     }
@@ -497,10 +681,16 @@ fn collect_locals(params: &Vec<String>, body: &Vec<StmtS>) -> HashMap<String, u1
     fn walk(body: &Vec<StmtS>, seen: &mut HashSet<String>) {
         for s in body {
             match &s.0 {
-                Stmt::Assign { name, .. } => {
-                    seen.insert(name.clone());
+                Stmt::Assign { target, .. } => {
+                    // locals는 Variable만 추적
+                    if let Expr::Variable(name) = &target.0 {
+                        seen.insert(name.clone());
+                    }
                 }
                 Stmt::Def { name, .. } => {
+                    seen.insert(name.clone());
+                }
+                Stmt::Class { name, .. } => {
                     seen.insert(name.clone());
                 }
                 Stmt::If {
@@ -546,10 +736,7 @@ fn patch_chain(ins: &mut I, rel: i32) {
 }
 
 fn get_or_add_string(module: &mut Module, s: String) -> u32 {
-    if let Some(idx) = module
-        .string_pool
-        .iter()
-        .position(|x| x == &s) {
+    if let Some(idx) = module.string_pool.iter().position(|x| x == &s) {
         idx as u32
     } else {
         let id = module.string_pool.len() as u32;

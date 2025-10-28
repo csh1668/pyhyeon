@@ -86,7 +86,6 @@ pub fn analyze(program: &[parser::ast::StmtS]) -> Result<(), Diagnostic> {
     }
 }
 
-
 pub fn compile_to_module(program: &[parser::ast::StmtS]) -> vm::bytecode::Module {
     let compiler = vm::Compiler::new();
     compiler.compile(program)
@@ -118,8 +117,8 @@ pub fn load_module(path: &str) -> std::io::Result<vm::bytecode::Module> {
 mod wasm_api {
     use super::*;
     use serde::Serialize;
-    use wasm_bindgen::prelude::*;
     use std::cell::RefCell;
+    use wasm_bindgen::prelude::*;
 
     /// VM execution session
     struct VmSession {
@@ -144,7 +143,7 @@ mod wasm_api {
 
     #[derive(Serialize)]
     pub struct VmStateInfo {
-        pub state: String,  // "running", "waiting_for_input", "finished", "error"
+        pub state: String, // "running", "waiting_for_input", "finished", "error"
         pub output: String,
     }
 
@@ -276,7 +275,8 @@ mod wasm_api {
                 return serde_wasm_bindgen::to_value(&VmStateInfo {
                     state: "error".to_string(),
                     output,
-                }).unwrap();
+                })
+                .unwrap();
             }
         };
 
@@ -285,7 +285,8 @@ mod wasm_api {
             return serde_wasm_bindgen::to_value(&VmStateInfo {
                 state: "error".to_string(),
                 output: diag.format("<mem>", &src, "Semantic Analyzing Failed", 4),
-            }).unwrap();
+            })
+            .unwrap();
         }
 
         // Compile
@@ -310,24 +311,23 @@ mod wasm_api {
             let mut session_opt = s.borrow_mut();
             if let Some(ref mut session) = *session_opt {
                 match session.vm.run_with_io(&mut session.module, &mut session.io) {
-                    Ok(_) => {
-                        serde_wasm_bindgen::to_value(&VmStateInfo {
-                            state: vm_state_to_string(session.vm.get_state()).to_string(),
-                            output: session.io.drain_output(),
-                        }).unwrap()
-                    }
-                    Err(err) => {
-                        serde_wasm_bindgen::to_value(&VmStateInfo {
-                            state: "error".to_string(),
-                            output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
-                        }).unwrap()
-                    }
+                    Ok(_) => serde_wasm_bindgen::to_value(&VmStateInfo {
+                        state: vm_state_to_string(session.vm.get_state()).to_string(),
+                        output: session.io.drain_output(),
+                    })
+                    .unwrap(),
+                    Err(err) => serde_wasm_bindgen::to_value(&VmStateInfo {
+                        state: "error".to_string(),
+                        output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
+                    })
+                    .unwrap(),
                 }
             } else {
                 serde_wasm_bindgen::to_value(&VmStateInfo {
                     state: "error".to_string(),
                     output: "No active program".to_string(),
-                }).unwrap()
+                })
+                .unwrap()
             }
         })
     }
@@ -342,27 +342,26 @@ mod wasm_api {
                 session.io.push_input_line(line.to_string());
                 // Resume execution
                 session.vm.resume();
-                
+
                 // Continue execution
                 match session.vm.run_with_io(&mut session.module, &mut session.io) {
-                    Ok(_) => {
-                        serde_wasm_bindgen::to_value(&VmStateInfo {
-                            state: vm_state_to_string(session.vm.get_state()).to_string(),
-                            output: session.io.drain_output(),
-                        }).unwrap()
-                    }
-                    Err(err) => {
-                        serde_wasm_bindgen::to_value(&VmStateInfo {
-                            state: "error".to_string(),
-                            output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
-                        }).unwrap()
-                    }
+                    Ok(_) => serde_wasm_bindgen::to_value(&VmStateInfo {
+                        state: vm_state_to_string(session.vm.get_state()).to_string(),
+                        output: session.io.drain_output(),
+                    })
+                    .unwrap(),
+                    Err(err) => serde_wasm_bindgen::to_value(&VmStateInfo {
+                        state: "error".to_string(),
+                        output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
+                    })
+                    .unwrap(),
                 }
             } else {
                 serde_wasm_bindgen::to_value(&VmStateInfo {
                     state: "error".to_string(),
                     output: "No active program".to_string(),
-                }).unwrap()
+                })
+                .unwrap()
             }
         })
     }
@@ -376,12 +375,14 @@ mod wasm_api {
                 serde_wasm_bindgen::to_value(&VmStateInfo {
                     state: vm_state_to_string(session.vm.get_state()).to_string(),
                     output: session.io.drain_output(),
-                }).unwrap()
+                })
+                .unwrap()
             } else {
                 serde_wasm_bindgen::to_value(&VmStateInfo {
                     state: "error".to_string(),
                     output: "No active program".to_string(),
-                }).unwrap()
+                })
+                .unwrap()
             }
         })
     }

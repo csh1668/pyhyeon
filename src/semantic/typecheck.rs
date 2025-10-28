@@ -64,25 +64,44 @@ fn tc_stmt(
     current_fn_return: Option<*mut Ty>,
 ) -> SemanticResult<()> {
     match &stmt.0 {
-        Stmt::Assign { name, value } => {
+        Stmt::Class { .. } => {
+            // 클래스 정의는 타입 체크 스킵 (v1에서는 간단히 처리)
+            Ok(())
+        }
+        Stmt::Assign { target, value } => {
             let rhs = tc_expr(value, tenv, ctx)?;
-            let prev = tenv.get(name);
-            let new_ty = match (prev, rhs) {
-                (None, t) => t,
-                (Some(Ty::Unknown), t) => t,
-                (Some(t), Ty::Unknown) => t,
-                (Some(a), b) if a == b => a,
-                (Some(a), b) => {
+            // target이 Variable이면 타입 추적, Attribute이면 검증만
+            match &target.0 {
+                Expr::Variable(name) => {
+                    let prev = tenv.get(name);
+                    let new_ty = match (prev, rhs) {
+                        (None, t) => t,
+                        (Some(Ty::Unknown), t) => t,
+                        (Some(t), Ty::Unknown) => t,
+                        (Some(a), b) if a == b => a,
+                        (Some(a), b) => {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "TypeError: cannot assign value of type {:?} to variable of type {:?}",
+                                    b, a
+                                ),
+                                span: value.1.clone(),
+                            });
+                        }
+                    };
+                    tenv.set(name.clone(), new_ty);
+                }
+                Expr::Attribute { .. } => {
+                    // Attribute 할당은 타입 추적하지 않음
+                    let _ = tc_expr(target, tenv, ctx)?;
+                }
+                _ => {
                     return Err(SemanticError {
-                        message: format!(
-                            "TypeError: cannot assign value of type {:?} to variable of type {:?}",
-                            b, a
-                        ),
-                        span: value.1.clone(),
+                        message: "Invalid assignment target".to_string(),
+                        span: target.1.clone(),
                     });
                 }
-            };
-            tenv.set(name.clone(), new_ty);
+            }
             Ok(())
         }
         Stmt::Expr(expr) => {
@@ -253,10 +272,13 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                     (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::String),
                     (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
                     _ => Err(SemanticError {
-                        message: format!("TypeError: unsupported operand types for +: {:?} and {:?}", tl, tr),
+                        message: format!(
+                            "TypeError: unsupported operand types for +: {:?} and {:?}",
+                            tl, tr
+                        ),
                         span: expr.1.clone(),
-                    })
-                }
+                    }),
+                },
                 BinaryOp::Multiply => match (tl, tr) {
                     (Ty::Int, Ty::Int) => Ok(Ty::Int),
                     (Ty::String, Ty::Int) | (Ty::Int, Ty::String) => Ok(Ty::String),
@@ -264,13 +286,16 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                     (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::String),
                     (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
                     _ => Err(SemanticError {
-                        message: format!("TypeError: unsupported operand types for *: {:?} and {:?}", tl, tr),
+                        message: format!(
+                            "TypeError: unsupported operand types for *: {:?} and {:?}",
+                            tl, tr
+                        ),
                         span: expr.1.clone(),
-                    })
+                    }),
+                },
+                BinaryOp::Subtract | BinaryOp::FloorDivide | BinaryOp::Modulo => {
+                    expect_int_pair(tl, tr, expr.1.clone()).map(|_| Ty::Int)
                 }
-                BinaryOp::Subtract
-                | BinaryOp::FloorDivide
-                | BinaryOp::Modulo => expect_int_pair(tl, tr, expr.1.clone()).map(|_| Ty::Int),
                 BinaryOp::Less
                 | BinaryOp::LessEqual
                 | BinaryOp::Greater
@@ -283,8 +308,8 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                     _ => Err(SemanticError {
                         message: format!("TypeError: cannot compare {:?} and {:?}", tl, tr),
                         span: expr.1.clone(),
-                    })
-                }
+                    }),
+                },
                 BinaryOp::Equal | BinaryOp::NotEqual => {
                     expect_same_or_unknown(tl, tr, expr.1.clone()).map(|_| Ty::Bool)
                 }
@@ -292,93 +317,122 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
             }
         }
         Expr::Call { func_name, args } => {
-            if let Some(bi) = crate::builtins::lookup(func_name) {
-                if args.len() < bi.min_arity() || args.len() > bi.max_arity() {
-                    let msg = if bi.min_arity() == bi.max_arity() {
-                        format!(
-                            "ArityError: {} takes {} positional argument(s) but {} given",
-                            bi.name,
-                            bi.arity(),
-                            args.len()
-                        )
-                    } else {
-                        format!(
-                            "ArityError: {} takes {}-{} positional argument(s) but {} given",
-                            bi.name,
-                            bi.min_arity(),
-                            bi.max_arity(),
-                            args.len()
-                        )
-                    };
-                    return Err(SemanticError {
-                        message: msg,
-                        span: expr.1.clone(),
-                    });
-                }
-                match bi.name {
-                    "print" => {
-                        let _ = tc_expr(&args[0], tenv, ctx)?;
-                        Ok(Ty::NoneType)
+            // func_name이 Variable인 경우에만 builtin 체크
+            let func_name_str = if let Expr::Variable(name) = &func_name.0 {
+                Some(name.as_str())
+            } else {
+                None
+            };
+
+            if let Some(name) = func_name_str {
+                if let Some(bi) = crate::builtins::lookup(name) {
+                    if args.len() < bi.min_arity() || args.len() > bi.max_arity() {
+                        let msg = if bi.min_arity() == bi.max_arity() {
+                            format!(
+                                "ArityError: {} takes {} positional argument(s) but {} given",
+                                bi.name,
+                                bi.arity(),
+                                args.len()
+                            )
+                        } else {
+                            format!(
+                                "ArityError: {} takes {}-{} positional argument(s) but {} given",
+                                bi.name,
+                                bi.min_arity(),
+                                bi.max_arity(),
+                                args.len()
+                            )
+                        };
+                        return Err(SemanticError {
+                            message: msg,
+                            span: expr.1.clone(),
+                        });
                     }
-                    "input" => {
-                        // input() or input(prompt)
-                        if args.len() == 1 {
+                    match bi.name {
+                        "print" => {
+                            let _ = tc_expr(&args[0], tenv, ctx)?;
+                            return Ok(Ty::NoneType);
+                        }
+                        "input" => {
+                            // input() or input(prompt)
+                            if args.len() == 1 {
+                                let arg_ty = tc_expr(&args[0], tenv, ctx)?;
+                                if arg_ty != Ty::String && arg_ty != Ty::Unknown {
+                                    return Err(SemanticError {
+                                        message: format!(
+                                            "TypeError: input() prompt must be a string, got {:?}",
+                                            arg_ty
+                                        ),
+                                        span: expr.1.clone(),
+                                    });
+                                }
+                            }
+                            return Ok(Ty::String);
+                        }
+                        "int" => {
+                            let _ = tc_expr(&args[0], tenv, ctx)?;
+                            return Ok(Ty::Int);
+                        }
+                        "bool" => {
+                            let _ = tc_expr(&args[0], tenv, ctx)?;
+                            return Ok(Ty::Bool);
+                        }
+                        "str" => {
+                            let _ = tc_expr(&args[0], tenv, ctx)?;
+                            return Ok(Ty::String);
+                        }
+                        "len" => {
                             let arg_ty = tc_expr(&args[0], tenv, ctx)?;
                             if arg_ty != Ty::String && arg_ty != Ty::Unknown {
                                 return Err(SemanticError {
-                                    message: format!("TypeError: input() prompt must be a string, got {:?}", arg_ty),
+                                    message: format!(
+                                        "TypeError: len() requires a string, got {:?}",
+                                        arg_ty
+                                    ),
                                     span: expr.1.clone(),
                                 });
                             }
+                            return Ok(Ty::Int);
                         }
-                        Ok(Ty::String)
+                        _ => return Ok(Ty::Unknown),
                     }
-                    "int" => {
-                        let _ = tc_expr(&args[0], tenv, ctx)?;
-                        Ok(Ty::Int)
+                } else if let Some(&arity) = ctx.functions.get(name) {
+                    // user-defined function
+                    if args.len() != arity {
+                        return Err(SemanticError {
+                            message: format!(
+                                "ArityError: function '{}' takes {} positional arguments but {} were given",
+                                name,
+                                arity,
+                                args.len()
+                            ),
+                            span: expr.1.clone(),
+                        });
                     }
-                    "bool" => {
-                        let _ = tc_expr(&args[0], tenv, ctx)?;
-                        Ok(Ty::Bool)
+                    for a in args {
+                        let _ = tc_expr(a, tenv, ctx)?;
                     }
-                    "str" => {
-                        let _ = tc_expr(&args[0], tenv, ctx)?;
-                        Ok(Ty::String)
+                    return Ok(Ty::Unknown);
+                } else {
+                    // Undefined function - semantic analysis should have caught this
+                    // But we allow it in typecheck for flexibility
+                    for a in args {
+                        let _ = tc_expr(a, tenv, ctx)?;
                     }
-                    "len" => {
-                        let arg_ty = tc_expr(&args[0], tenv, ctx)?;
-                        if arg_ty != Ty::String && arg_ty != Ty::Unknown {
-                            return Err(SemanticError {
-                                message: format!("TypeError: len() requires a string, got {:?}", arg_ty),
-                                span: expr.1.clone(),
-                            });
-                        }
-                        Ok(Ty::Int)
-                    }
-                    _ => Ok(Ty::Unknown),
+                    return Ok(Ty::Unknown);
                 }
-            } else if let Some(expected) = ctx.functions.get(func_name) {
-                if *expected != args.len() {
-                    return Err(SemanticError {
-                        message: format!(
-                            "ArityError: function '{}' takes {} positional arguments but {} were given",
-                            func_name,
-                            expected,
-                            args.len()
-                        ),
-                        span: expr.1.clone(),
-                    });
-                }
-                for a in args {
-                    let _ = tc_expr(a, tenv, ctx)?;
-                }
-                Ok(Ty::Unknown)
-            } else {
-                Err(SemanticError {
-                    message: format!("Undefined function: {}", func_name),
-                    span: expr.1.clone(),
-                })
             }
+
+            // Attribute 등 다른 경우: 간단히 Unknown 반환
+            let _ = tc_expr(func_name, tenv, ctx)?;
+            for a in args {
+                let _ = tc_expr(a, tenv, ctx)?;
+            }
+            Ok(Ty::Unknown)
+        }
+        Expr::Attribute { object, .. } => {
+            let _ = tc_expr(object, tenv, ctx)?;
+            Ok(Ty::Unknown) // Attribute는 Unknown 타입으로 처리
         }
     }
 }

@@ -10,11 +10,11 @@ impl Builtin {
     pub const fn arity(&self) -> usize {
         self.params.len()
     }
-    
+
     pub const fn min_arity(&self) -> usize {
         self.min_arity
     }
-    
+
     pub const fn max_arity(&self) -> usize {
         self.params.len()
     }
@@ -28,7 +28,7 @@ const PRINT: Builtin = Builtin {
 const INPUT: Builtin = Builtin {
     name: "input",
     params: &["prompt"],
-    min_arity: 0,  // prompt is optional
+    min_arity: 0, // prompt is optional
 };
 const INT: Builtin = Builtin {
     name: "int",

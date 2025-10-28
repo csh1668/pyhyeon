@@ -1,8 +1,12 @@
 use super::bytecode::{
-    BUILTIN_BOOL_ID, BUILTIN_INPUT_ID, BUILTIN_INT_ID, BUILTIN_PRINT_ID, BUILTIN_STR_ID, BUILTIN_LEN_ID,
-    Instruction as I, Module, Value,
+    BUILTIN_BOOL_ID, BUILTIN_INPUT_ID, BUILTIN_INT_ID, BUILTIN_LEN_ID, BUILTIN_PRINT_ID,
+    BUILTIN_STR_ID, BuiltinClassType, BuiltinObject, BuiltinObjectData, ClassDef, Instruction as I,
+    Module, UserObject, Value,
 };
 use crate::runtime_io::RuntimeIo;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum VmErrorKind {
@@ -133,6 +137,10 @@ impl Vm {
                 I::ConstStr(i) => {
                     let s = module.string_pool[*i as usize].clone();
                     self.push(Value::String(s))?;
+                }
+                I::LoadConst(i) => {
+                    let v = module.consts[*i as usize].clone();
+                    self.push(v)?;
                 }
                 I::True => {
                     self.push(Value::Bool(true))?;
@@ -363,14 +371,14 @@ impl Vm {
                                     ),
                                 ));
                             }
-                            
-                            // If there's a prompt argument, output it first
-                            if argc == 1 {
-                                let prompt = self.pop()?;
+
+                            // Get prompt if provided (peek to keep on stack for retry)
+                            let prompt_str = if argc == 1 {
+                                let prompt = self.stack.last().ok_or_else(|| {
+                                    err(VmErrorKind::StackUnderflow, "stack underflow".into())
+                                })?;
                                 match prompt {
-                                    Value::String(s) => {
-                                        io.write(&s);
-                                    }
+                                    Value::String(s) => Some(s.as_str()),
                                     _ => {
                                         return Err(err(
                                             VmErrorKind::TypeError("input"),
@@ -378,19 +386,27 @@ impl Vm {
                                         ));
                                     }
                                 }
-                            }
-                            
+                            } else {
+                                None
+                            };
+
                             use crate::runtime_io::ReadResult;
-                            match io.read_line() {
+                            // Use read_line_with_prompt which handles prompt deduplication internally
+                            match io.read_line_with_prompt(prompt_str) {
                                 ReadResult::Ok(line) => {
-                                    // Return the line as a string (trimmed)
+                                    // Pop the prompt if it exists
+                                    if argc == 1 {
+                                        self.pop()?;
+                                    }
+                                    // Push the input result
                                     self.push(Value::String(line.trim().to_string()))?;
                                     self.state = VmState::Running;
                                 }
                                 ReadResult::WaitingForInput => {
-                                    // Mark VM as waiting for input and return
+                                    // Mark VM as waiting for input
+                                    // Keep the prompt on stack (we peeked, didn't pop)
+                                    // Decrement IP so we retry this instruction when input arrives
                                     self.state = VmState::WaitingForInput;
-                                    // Don't advance IP - we'll retry this instruction when input arrives
                                     if let Some(f) = self.frames.last_mut() {
                                         f.ip -= 1;
                                     }
@@ -437,10 +453,7 @@ impl Vm {
                                         expected: 1,
                                         got: argc,
                                     },
-                                    format!(
-                                        "str() takes 1 positional argument but {} given",
-                                        argc
-                                    ),
+                                    format!("str() takes 1 positional argument but {} given", argc),
                                 ));
                             }
                             let v = self.pop()?;
@@ -449,6 +462,10 @@ impl Vm {
                                 Value::Bool(b) => (if b { "True" } else { "False" }).to_string(),
                                 Value::String(s) => s,
                                 Value::None => "None".to_string(),
+                                Value::UserClass(c) => format!("<class '{}'>", c.name),
+                                Value::UserObject(_) => "<object>".to_string(),
+                                Value::BuiltinClass(bt) => format!("<class '{:?}'>", bt),
+                                Value::BuiltinObject(_) => "<object>".to_string(),
                             };
                             self.push(Value::String(s))?;
                         }
@@ -459,10 +476,7 @@ impl Vm {
                                         expected: 1,
                                         got: argc,
                                     },
-                                    format!(
-                                        "len() takes 1 positional argument but {} given",
-                                        argc
-                                    ),
+                                    format!("len() takes 1 positional argument but {} given", argc),
                                 ));
                             }
                             let v = self.pop()?;
@@ -482,6 +496,192 @@ impl Vm {
                             return Err(err(
                                 VmErrorKind::TypeError("builtin"),
                                 format!("unknown builtin id {}", bid),
+                            ));
+                        }
+                    }
+                }
+                I::CallValue(argc) => {
+                    let argc = *argc as usize;
+                    // 인자들 팝
+                    let mut args = Vec::new();
+                    for _ in 0..argc {
+                        args.push(self.pop()?);
+                    }
+                    args.reverse();
+
+                    // callable 팝
+                    let callable = self.pop()?;
+
+                    // callable 타입에 따라 호출
+                    match callable {
+                        Value::UserClass(class_def) => {
+                            // 인스턴스 생성
+                            let class_id = module
+                                .classes
+                                .iter()
+                                .position(|c| c.name == class_def.name)
+                                .ok_or_else(|| {
+                                    err(
+                                        VmErrorKind::TypeError("class"),
+                                        format!("Class '{}' not found", class_def.name),
+                                    )
+                                })? as u16;
+
+                            let instance = UserObject {
+                                class_id,
+                                attributes: HashMap::new(),
+                            };
+                            let instance_value = Value::UserObject(Rc::new(RefCell::new(instance)));
+
+                            // __init__ 메서드가 있으면 호출 (동기적으로)
+                            if let Some(&init_func_id) = class_def.methods.get("__init__") {
+                                // __init__(self, *args) 호출
+                                let mut init_args = vec![instance_value.clone()];
+                                init_args.extend(args);
+                                let num_args = init_args.len();
+
+                                // 인자를 순서대로 스택에 푸시 (enter_func이 역순으로 팝)
+                                for arg in init_args {
+                                    self.push(arg)?;
+                                }
+
+                                // __init__ 함수 호출 및 즉시 실행
+                                self.enter_func(module, init_func_id as usize, num_args)?;
+
+                                // __init__을 완전히 실행 (재귀적으로 run 호출하지 않고 loop에서 실행될 것임)
+                                // 하지만 인스턴스를 별도로 스택 아래에 저장해둠
+                                // 대신: __init__이 Return하면 그 반환값을 버리고 instance를 푸시
+                                //
+                                // 더 간단한 방법: 스택에 instance를 먼저 저장
+                                self.stack.insert(
+                                    self.frames.last().unwrap().ret_stack_size,
+                                    instance_value,
+                                );
+                                continue;
+                            } else if !args.is_empty() {
+                                return Err(err(
+                                    VmErrorKind::ArityError {
+                                        expected: 0,
+                                        got: args.len(),
+                                    },
+                                    format!("{}() takes no arguments", class_def.name),
+                                ));
+                            }
+
+                            self.push(instance_value)?;
+                        }
+                        Value::BuiltinClass(bt) => {
+                            let result = self.create_builtin_instance(bt, args)?;
+                            self.push(result)?;
+                        }
+                        _ => {
+                            return Err(err(
+                                VmErrorKind::TypeError("callable"),
+                                format!("{:?} is not callable", callable),
+                            ));
+                        }
+                    }
+                }
+                I::CallMethod(method_sym, argc) => {
+                    let argc = *argc as usize;
+                    // 인자들 팝
+                    let mut args = Vec::new();
+                    for _ in 0..argc {
+                        args.push(self.pop()?);
+                    }
+                    args.reverse();
+
+                    // receiver 팝
+                    let receiver = self.pop()?;
+
+                    // 메서드 이름 가져오기
+                    let method_name = &module.symbols[*method_sym as usize];
+
+                    // 타입별 dispatch
+                    let result = match &receiver {
+                        // String 메서드
+                        Value::String(s) => self.call_string_method(s, method_name, args)?,
+                        // Built-in Object 메서드
+                        Value::BuiltinObject(obj_rc) => {
+                            let obj = obj_rc.borrow();
+                            self.call_builtin_method(&obj, method_name, args)?
+                        }
+                        // User Object 메서드
+                        Value::UserObject(obj_rc) => {
+                            let obj = obj_rc.borrow();
+                            let class_def = &module.classes[obj.class_id as usize];
+
+                            // 메서드 테이블에서 찾기
+                            let func_id = class_def.methods.get(method_name).ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    format!("'{}' has no method '{}'", class_def.name, method_name),
+                                )
+                            })?;
+
+                            // self를 첫 번째 인자로 추가
+                            let mut full_args = vec![receiver.clone()];
+                            full_args.extend(args);
+                            let num_args = full_args.len();
+
+                            // 인자를 순서대로 스택에 푸시 (enter_func이 역순으로 팝)
+                            for arg in full_args {
+                                self.push(arg)?;
+                            }
+
+                            // 함수 호출
+                            drop(obj); // borrow 해제
+                            self.enter_func(module, *func_id as usize, num_args)?;
+                            continue;
+                        }
+                        _ => {
+                            return Err(err(
+                                VmErrorKind::TypeError("method call"),
+                                format!("{:?} has no methods", receiver),
+                            ));
+                        }
+                    };
+
+                    self.push(result)?;
+                }
+                I::LoadAttr(attr_sym) => {
+                    let obj = self.pop()?;
+                    let attr_name = &module.symbols[*attr_sym as usize];
+
+                    let value = match &obj {
+                        Value::UserObject(obj_rc) => {
+                            let obj = obj_rc.borrow();
+                            obj.attributes.get(attr_name).cloned().ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("attribute"),
+                                    format!("Object has no attribute '{}'", attr_name),
+                                )
+                            })?
+                        }
+                        _ => {
+                            return Err(err(
+                                VmErrorKind::TypeError("attribute access"),
+                                format!("{:?} has no attributes", obj),
+                            ));
+                        }
+                    };
+
+                    self.push(value)?;
+                }
+                I::StoreAttr(attr_sym) => {
+                    let value = self.pop()?;
+                    let obj = self.pop()?;
+                    let attr_name = &module.symbols[*attr_sym as usize];
+
+                    match obj {
+                        Value::UserObject(obj_rc) => {
+                            let mut obj = obj_rc.borrow_mut();
+                            obj.attributes.insert(attr_name.clone(), value);
+                        }
+                        _ => {
+                            return Err(err(
+                                VmErrorKind::TypeError("attribute assignment"),
+                                "Cannot set attributes on non-object".into(),
                             ));
                         }
                     }
@@ -598,6 +798,151 @@ impl Vm {
     fn current_num_locals(&self, _func_id: usize) -> usize {
         0
     }
+
+    fn create_builtin_instance(&self, bt: BuiltinClassType, args: Vec<Value>) -> VmResult<Value> {
+        match bt {
+            BuiltinClassType::Range => {
+                let instance = match args.len() {
+                    1 => {
+                        let stop = self.expect_int_val(&args[0])?;
+                        BuiltinObject {
+                            class_type: BuiltinClassType::Range,
+                            data: BuiltinObjectData::Range {
+                                current: 0,
+                                stop,
+                                step: 1,
+                            },
+                        }
+                    }
+                    2 => {
+                        let start = self.expect_int_val(&args[0])?;
+                        let stop = self.expect_int_val(&args[1])?;
+                        BuiltinObject {
+                            class_type: BuiltinClassType::Range,
+                            data: BuiltinObjectData::Range {
+                                current: start,
+                                stop,
+                                step: 1,
+                            },
+                        }
+                    }
+                    3 => {
+                        let start = self.expect_int_val(&args[0])?;
+                        let stop = self.expect_int_val(&args[1])?;
+                        let step = self.expect_int_val(&args[2])?;
+
+                        if step == 0 {
+                            return Err(err(
+                                VmErrorKind::TypeError("range"),
+                                "range() step must not be zero".into(),
+                            ));
+                        }
+
+                        BuiltinObject {
+                            class_type: BuiltinClassType::Range,
+                            data: BuiltinObjectData::Range {
+                                current: start,
+                                stop,
+                                step,
+                            },
+                        }
+                    }
+                    _ => {
+                        return Err(err(
+                            VmErrorKind::ArityError {
+                                expected: 3,
+                                got: args.len(),
+                            },
+                            "range() takes 1 to 3 arguments".into(),
+                        ));
+                    }
+                };
+
+                Ok(Value::BuiltinObject(Rc::new(RefCell::new(instance))))
+            }
+        }
+    }
+
+    // String 메서드
+    fn call_string_method(&self, s: &str, method: &str, args: Vec<Value>) -> VmResult<Value> {
+        match method {
+            "upper" => {
+                if !args.is_empty() {
+                    return Err(err(
+                        VmErrorKind::ArityError {
+                            expected: 0,
+                            got: args.len(),
+                        },
+                        "upper() takes no arguments".into(),
+                    ));
+                }
+                Ok(Value::String(s.to_uppercase()))
+            }
+            "lower" => {
+                if !args.is_empty() {
+                    return Err(err(
+                        VmErrorKind::ArityError {
+                            expected: 0,
+                            got: args.len(),
+                        },
+                        "lower() takes no arguments".into(),
+                    ));
+                }
+                Ok(Value::String(s.to_lowercase()))
+            }
+            "strip" => {
+                if !args.is_empty() {
+                    return Err(err(
+                        VmErrorKind::ArityError {
+                            expected: 0,
+                            got: args.len(),
+                        },
+                        "strip() takes no arguments".into(),
+                    ));
+                }
+                Ok(Value::String(s.trim().to_string()))
+            }
+            _ => Err(err(
+                VmErrorKind::TypeError("method"),
+                format!("str has no method '{}'", method),
+            )),
+        }
+    }
+
+    // Built-in 클래스 메서드
+    fn call_builtin_method(
+        &self,
+        obj: &BuiltinObject,
+        method: &str,
+        args: Vec<Value>,
+    ) -> VmResult<Value> {
+        match (&obj.class_type, method) {
+            (BuiltinClassType::Range, "__iter__") => {
+                if !args.is_empty() {
+                    return Err(err(
+                        VmErrorKind::ArityError {
+                            expected: 0,
+                            got: args.len(),
+                        },
+                        "__iter__() takes no arguments".into(),
+                    ));
+                }
+                // Range는 자기 자신이 iterator
+                Ok(Value::BuiltinObject(Rc::new(RefCell::new(obj.clone()))))
+            }
+            _ => Err(err(
+                VmErrorKind::TypeError("method"),
+                format!("{:?} has no method '{}'", obj.class_type, method),
+            )),
+        }
+    }
+
+    fn expect_int_val(&self, v: &Value) -> VmResult<i64> {
+        match v {
+            Value::Int(i) => Ok(*i),
+            _ => Err(err(VmErrorKind::TypeError("int"), "expected Int".into())),
+        }
+    }
 }
 
 fn to_int(v: &Value) -> i64 {
@@ -609,9 +954,10 @@ fn to_int(v: &Value) -> i64 {
             } else {
                 0
             }
-        },
+        }
         Value::String(s) => s.parse::<i64>().unwrap_or(0),
         Value::None => 0,
+        _ => 0, // 클래스 객체들은 0으로
     }
 }
 fn to_bool(v: &Value) -> bool {
@@ -620,6 +966,7 @@ fn to_bool(v: &Value) -> bool {
         Value::Int(i) => *i != 0,
         Value::String(s) => !s.is_empty(),
         Value::None => false,
+        _ => true, // 객체들은 true
     }
 }
 fn eq_vals(a: &Value, b: &Value) -> bool {
@@ -628,6 +975,10 @@ fn eq_vals(a: &Value, b: &Value) -> bool {
         (Value::Bool(x), Value::Bool(y)) => x == y,
         (Value::String(x), Value::String(y)) => x == y,
         (Value::None, Value::None) => true,
+        (Value::UserClass(x), Value::UserClass(y)) => Rc::ptr_eq(x, y),
+        (Value::UserObject(x), Value::UserObject(y)) => Rc::ptr_eq(x, y),
+        (Value::BuiltinClass(x), Value::BuiltinClass(y)) => x == y,
+        (Value::BuiltinObject(x), Value::BuiltinObject(y)) => Rc::ptr_eq(x, y),
         _ => false,
     }
 }
@@ -637,6 +988,16 @@ fn display_value(v: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::String(s) => s.clone(),
         Value::None => "None".into(),
+        Value::UserClass(c) => format!("<class '{}'>", c.name),
+        Value::UserObject(o) => {
+            let obj = o.borrow();
+            format!("<{} object>", obj.class_id)
+        }
+        Value::BuiltinClass(bt) => format!("<class '{:?}'>", bt),
+        Value::BuiltinObject(o) => {
+            let obj = o.borrow();
+            format!("<{:?} object>", obj.class_type)
+        }
     }
 }
 
@@ -650,8 +1011,8 @@ fn jump_rel(ip: &mut usize, off: i32) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::bytecode::FunctionCode;
+    use super::*;
 
     fn make_test_module() -> Module {
         Module {
@@ -660,6 +1021,7 @@ mod tests {
             globals: vec![],
             symbols: vec![],
             functions: vec![],
+            classes: vec![],
         }
     }
 
@@ -704,14 +1066,12 @@ mod tests {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(42),
-            ],
+            code: vec![I::ConstI64(42)],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         // Should return 42
         assert_eq!(result, Some(Value::Int(42)));
     }
@@ -723,16 +1083,12 @@ mod tests {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(10),
-                I::ConstI64(32),
-                I::Add,
-            ],
+            code: vec![I::ConstI64(10), I::ConstI64(32), I::Add],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         assert_eq!(result, Some(Value::Int(42)));
     }
 
@@ -743,16 +1099,12 @@ mod tests {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(50),
-                I::ConstI64(8),
-                I::Sub,
-            ],
+            code: vec![I::ConstI64(50), I::ConstI64(8), I::Sub],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         assert_eq!(result, Some(Value::Int(42)));
     }
 
@@ -763,16 +1115,12 @@ mod tests {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(6),
-                I::ConstI64(7),
-                I::Mul,
-            ],
+            code: vec![I::ConstI64(6), I::ConstI64(7), I::Mul],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         assert_eq!(result, Some(Value::Int(42)));
     }
 
@@ -783,16 +1131,12 @@ mod tests {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(84),
-                I::ConstI64(2),
-                I::Div,
-            ],
+            code: vec![I::ConstI64(84), I::ConstI64(2), I::Div],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         assert_eq!(result, Some(Value::Int(42)));
     }
 
@@ -803,16 +1147,12 @@ mod tests {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(42),
-                I::ConstI64(10),
-                I::Mod,
-            ],
+            code: vec![I::ConstI64(42), I::ConstI64(10), I::Mod],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         assert_eq!(result, Some(Value::Int(2)));
     }
 
@@ -823,15 +1163,12 @@ mod tests {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(42),
-                I::Neg,
-            ],
+            code: vec![I::ConstI64(42), I::Neg],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         assert_eq!(result, Some(Value::Int(-42)));
     }
 
@@ -842,16 +1179,12 @@ mod tests {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(42),
-                I::ConstI64(42),
-                I::Eq,
-            ],
+            code: vec![I::ConstI64(42), I::ConstI64(42), I::Eq],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         assert_eq!(result, Some(Value::Bool(true)));
     }
 
@@ -862,16 +1195,12 @@ mod tests {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(10),
-                I::ConstI64(42),
-                I::Lt,
-            ],
+            code: vec![I::ConstI64(10), I::ConstI64(42), I::Lt],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         assert_eq!(result, Some(Value::Bool(true)));
     }
 
@@ -882,15 +1211,12 @@ mod tests {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::True,
-                I::Not,
-            ],
+            code: vec![I::True, I::Not],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         assert_eq!(result, Some(Value::Bool(false)));
     }
 
@@ -911,7 +1237,7 @@ mod tests {
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         // Should return 4 (skipped 2 and 3)
         assert_eq!(result, Some(Value::Int(4)));
     }
@@ -934,7 +1260,7 @@ mod tests {
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         // Should return 3 (skipped 1 and 2)
         assert_eq!(result, Some(Value::Int(3)));
     }
@@ -959,7 +1285,7 @@ mod tests {
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         // Should return 142
         assert_eq!(result, Some(Value::Int(142)));
     }
@@ -969,7 +1295,7 @@ mod tests {
     #[test]
     fn test_function_call_no_args() {
         let mut module = make_test_module();
-        
+
         // Function 0: main
         module.functions.push(FunctionCode {
             name_sym: 0,
@@ -979,28 +1305,25 @@ mod tests {
                 I::Call(1, 0), // Call function 1 with 0 args
             ],
         });
-        
+
         // Function 1: returns 42
         module.functions.push(FunctionCode {
             name_sym: 1,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(42),
-                I::Return,
-            ],
+            code: vec![I::ConstI64(42), I::Return],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         assert_eq!(result, Some(Value::Int(42)));
     }
 
     #[test]
     fn test_function_call_with_args() {
         let mut module = make_test_module();
-        
+
         // Function 0: main, calls add(10, 32)
         module.functions.push(FunctionCode {
             name_sym: 0,
@@ -1012,7 +1335,7 @@ mod tests {
                 I::Call(1, 2), // Call function 1 with 2 args
             ],
         });
-        
+
         // Function 1: add(a, b) -> a + b
         module.functions.push(FunctionCode {
             name_sym: 1,
@@ -1028,25 +1351,22 @@ mod tests {
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         assert_eq!(result, Some(Value::Int(42)));
     }
 
     #[test]
     fn test_recursive_function() {
         let mut module = make_test_module();
-        
+
         // Function 0: main, calls factorial(5)
         module.functions.push(FunctionCode {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(5),
-                I::Call(1, 1),
-            ],
+            code: vec![I::ConstI64(5), I::Call(1, 1)],
         });
-        
+
         // Function 1: factorial(n)
         // if n == 0: return 1
         // else: return n * factorial(n-1)
@@ -1055,26 +1375,26 @@ mod tests {
             arity: 1,
             num_locals: 1,
             code: vec![
-                I::LoadLocal(0),     // n
+                I::LoadLocal(0), // n
                 I::ConstI64(0),
                 I::Eq,
-                I::JumpIfFalse(2),   // if n != 0, jump to else
+                I::JumpIfFalse(2), // if n != 0, jump to else
                 I::ConstI64(1),
                 I::Return,
                 // else:
-                I::LoadLocal(0),     // n
-                I::LoadLocal(0),     // n
+                I::LoadLocal(0), // n
+                I::LoadLocal(0), // n
                 I::ConstI64(1),
-                I::Sub,              // n - 1
-                I::Call(1, 1),       // factorial(n-1)
-                I::Mul,              // n * factorial(n-1)
+                I::Sub,        // n - 1
+                I::Call(1, 1), // factorial(n-1)
+                I::Mul,        // n * factorial(n-1)
                 I::Return,
             ],
         });
 
         let mut vm = Vm::new();
         let result = vm.run(&mut module).ok().flatten();
-        
+
         // 5! = 120
         assert_eq!(result, Some(Value::Int(120)));
     }
@@ -1086,11 +1406,7 @@ mod tests {
             name_sym: 0,
             arity: 0,
             num_locals: 0,
-            code: vec![
-                I::ConstI64(42),
-                I::ConstI64(0),
-                I::Div,
-            ],
+            code: vec![I::ConstI64(42), I::ConstI64(0), I::Div],
         });
 
         let mut vm = Vm::new();
@@ -1123,4 +1439,3 @@ mod tests {
         }
     }
 }
-

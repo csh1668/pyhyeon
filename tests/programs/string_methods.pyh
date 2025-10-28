@@ -1,0 +1,9 @@
+# String 메서드 테스트
+s = "Hello World"
+print(s.upper())
+print(s.lower())
+
+s2 = "  spaces  "
+print(s2.strip())
+
+

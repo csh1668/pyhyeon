@@ -16,6 +16,8 @@ pub trait RuntimeIo {
     fn write_line(&mut self, s: &str);
     fn write(&mut self, s: &str);
     fn read_line(&mut self) -> ReadResult;
+    /// Read a line with optional prompt. Prompt is shown only on first call.
+    fn read_line_with_prompt(&mut self, prompt: Option<&str>) -> ReadResult;
 }
 
 /// Default I/O that talks to process stdout/stdin (CLI use).
@@ -39,12 +41,19 @@ impl RuntimeIo for StdIo {
             Err(e) => ReadResult::Error(e.to_string()),
         }
     }
+    fn read_line_with_prompt(&mut self, prompt: Option<&str>) -> ReadResult {
+        if let Some(p) = prompt {
+            self.write(p);
+        }
+        self.read_line()
+    }
 }
 
 /// Buffer-based I/O for browsers/tests: caller pushes input, we accumulate output.
 pub struct BufferIo {
     output: String,
     input: VecDeque<String>,
+    last_prompt: Option<String>,
 }
 
 impl BufferIo {
@@ -52,6 +61,7 @@ impl BufferIo {
         Self {
             output: String::new(),
             input: VecDeque::new(),
+            last_prompt: None,
         }
     }
     pub fn push_input_line<S: Into<String>>(&mut self, line: S) {
@@ -90,6 +100,24 @@ impl RuntimeIo for BufferIo {
             ReadResult::Ok(line)
         } else {
             ReadResult::WaitingForInput
+        }
+    }
+    fn read_line_with_prompt(&mut self, prompt: Option<&str>) -> ReadResult {
+        // Show prompt only if it's different from last time (prevents duplicate on retry)
+        if let Some(p) = prompt {
+            if self.last_prompt.as_deref() != Some(p) {
+                self.write(p);
+                self.last_prompt = Some(p.to_string());
+            }
+        }
+        
+        match self.read_line() {
+            ReadResult::Ok(line) => {
+                // Clear last_prompt after successful read
+                self.last_prompt = None;
+                ReadResult::Ok(line)
+            }
+            other => other,
         }
     }
 }

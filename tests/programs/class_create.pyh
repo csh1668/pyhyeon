@@ -1,0 +1,9 @@
+# 클래스 생성만 테스트
+class Empty:
+  def greet(self):
+    return "hello"
+
+e = Empty()
+print("created")
+
+

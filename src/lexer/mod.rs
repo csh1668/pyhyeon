@@ -161,6 +161,8 @@ impl<'source> Lexer<'source> {
             RawToken::And => Token::And,
             RawToken::Or => Token::Or,
             RawToken::Not => Token::Not,
+            RawToken::Class => Token::Class,
+
             RawToken::Bool(b) => Token::Bool(b),
             RawToken::Int(i) => Token::Int(i),
             RawToken::String(s) => Token::String(s),
@@ -182,6 +184,8 @@ impl<'source> Lexer<'source> {
             RawToken::Colon => Token::Colon,
             RawToken::Comma => Token::Comma,
             RawToken::Semicolon => Token::Semicolon,
+            RawToken::Dot => Token::Dot,
+
             RawToken::Newline => Token::Newline,
         }
     }

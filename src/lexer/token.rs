@@ -13,6 +13,7 @@ pub enum Token {
     And,
     Or,
     Not,
+    Class,
     // Identifiers and literals
     None,
     Bool(bool),
@@ -37,6 +38,7 @@ pub enum Token {
     Colon,
     Comma,
     Semicolon,
+    Dot,
     // Special tokens
     Indent,
     Dedent,
@@ -59,6 +61,7 @@ impl Display for Token {
             Token::And => write!(f, "and"),
             Token::Or => write!(f, "or"),
             Token::Not => write!(f, "not"),
+            Token::Class => write!(f, "class"),
 
             // Identifiers and literals
             Token::None => write!(f, "None"),
@@ -86,6 +89,7 @@ impl Display for Token {
             Token::Colon => write!(f, ":"),
             Token::Comma => write!(f, ","),
             Token::Semicolon => write!(f, ";"),
+            Token::Dot => write!(f, "."),
 
             // Special tokens
             Token::Indent => write!(f, "<INDENT>"),

@@ -1,0 +1,9 @@
+# 매우 간단한 클래스 테스트 (__init__ 없이)
+class Empty:
+  def greet(self):
+    return "hello"
+
+e = Empty()
+print(e.greet())
+
+

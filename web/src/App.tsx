@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as monaco from 'monaco-editor'
-import { Github, Play, Loader2, StopCircle, Send, Terminal, Code2 } from 'lucide-react'
+import { Github, Play, Loader2, StopCircle, Send, Terminal, Code2, FileCode } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { initWasm } from './lib/utils'
 import { 
   analyze as wasmAnalyze,
@@ -12,6 +21,13 @@ import {
 import { AnsiUp } from 'ansi_up'
 
 type VmState = 'idle' | 'running' | 'waiting_for_input' | 'finished' | 'error'
+
+interface Example {
+  id: string
+  name: string
+  description: string
+  category: string
+}
 
 function App() {
   const editorRef = useRef<HTMLDivElement>(null)
@@ -25,6 +41,8 @@ function App() {
   const [inputValue, setInputValue] = useState<string>('')
   const inputRef = useRef<HTMLInputElement>(null)
   const outputEndRef = useRef<HTMLDivElement>(null)
+  const [examples, setExamples] = useState<Example[]>([])
+  const [selectedExample, setSelectedExample] = useState<string>('')
   
   // ANSI to HTML converter
   const ansiUp = useMemo(() => new AnsiUp(), [])
@@ -45,6 +63,43 @@ function App() {
     }
     init()
   }, [])
+
+  // 예제 파일 목록 로드
+  useEffect(() => {
+    const loadExamples = async () => {
+      try {
+        const response = await fetch('/pyhyeon/examples/examples.json')
+        if (response.ok) {
+          const data = await response.json()
+          setExamples(data)
+        }
+      } catch (error) {
+        console.error('Failed to load examples:', error)
+      }
+    }
+    loadExamples()
+  }, [])
+
+  // 선택된 예제 파일 로드
+  const loadExample = useCallback(async (exampleId: string) => {
+    if (!editor || !exampleId) return
+    
+    try {
+      const example = examples.find(ex => ex.id === exampleId)
+      if (!example) return
+      
+      const response = await fetch(`/pyhyeon/examples/${example.name}`)
+      if (response.ok) {
+        const code = await response.text()
+        editor.setValue(code)
+        setSelectedExample(exampleId)
+        setOutput('')
+        setVmState('idle')
+      }
+    } catch (error) {
+      console.error('Failed to load example:', error)
+    }
+  }, [editor, examples])
 
   // Handle resize
   const handleMouseDown = useCallback(() => {
@@ -124,6 +179,15 @@ function App() {
           // 내장 함수 - 노란색
           { token: 'builtin', foreground: 'dcdcaa' },
           
+          // 특별한 식별자 (self) - 밝은 파란색
+          { token: 'special', foreground: '4fc1ff', fontStyle: 'italic' },
+          
+          // 클래스 이름 - 밝은 녹색
+          { token: 'type.identifier', foreground: '4ec9b0', fontStyle: 'bold' },
+          
+          // 매직 메서드 (__init__, __str__ 등) - 자주색
+          { token: 'magic', foreground: 'c586c0' },
+          
           // 숫자 - 연한 녹색
           { token: 'number', foreground: 'b5cea8' },
           
@@ -167,11 +231,14 @@ function App() {
         // 현재 pyhyeon에 구현된 키워드들
         keywords: [
           'if', 'elif', 'else', 'while', 'def', 'return', 
-          'and', 'or', 'not'
+          'and', 'or', 'not', 'class'
         ],
         
         // 상수 키워드
         constants: ['None', 'True', 'False'],
+        
+        // 특별한 식별자
+        special: ['self'],
         
         // 내장 함수들
         builtins: ['print', 'input', 'int', 'bool', 'str', 'len'],
@@ -183,7 +250,7 @@ function App() {
         ],
         
         // 구분자들
-        delimiters: ['(', ')', ':', ',', ';'],
+        delimiters: ['(', ')', ':', ',', ';', '.'],
         
         tokenizer: {
           root: [
@@ -199,11 +266,18 @@ function App() {
             // 숫자 (정수만 지원)
             [/\d+/, 'number'],
             
-            // 키워드, 상수, 내장함수, 식별자
+            // 매직 메서드 (__init__, __str__ 등)
+            [/__[a-zA-Z_]\w*__/, 'magic'],
+            
+            // class 키워드 - 상태 전환으로 클래스 이름 특별 처리
+            [/class(?=\s)/, { token: 'keyword', next: '@className' }],
+            
+            // 키워드, 상수, 특별한 식별자, 내장함수, 일반 식별자
             [/[a-zA-Z_]\w*/, {
               cases: {
                 '@keywords': 'keyword',
                 '@constants': 'constant',
+                '@special': 'special',
                 '@builtins': 'builtin',
                 '@default': 'identifier'
               }
@@ -212,11 +286,18 @@ function App() {
             // 연산자
             [/==|!=|<=|>=|\/\/|[+\-*%<>=]/, 'operator'],
             
-            // 구분자
-            [/[()\:,;]/, 'delimiter'],
+            // 구분자 (점 추가)
+            [/[()\:,;.]/, 'delimiter'],
             
             // 공백
             [/[ \t\r\n]+/, 'white'],
+          ],
+          
+          // 클래스 이름 상태 (class 키워드 다음)
+          className: [
+            [/[ \t\r\n]+/, 'white'],
+            [/[a-zA-Z_]\w*/, { token: 'type.identifier', next: '@pop' }],
+            [/./, { token: '@rematch', next: '@pop' }],
           ],
           
           // 큰따옴표 문자열 처리
@@ -268,7 +349,7 @@ function App() {
       })
 
       instance = monaco.editor.create(editorRef.current!, {
-        value: '# Interactive input example\nname = input()\nprint("Hello, " + name + "!")\n\nage = int(input())\nprint("You are " + str(age) + " years old.")\n',
+        value: 'name = input("Enter your name:")\nprint("Hello, " + name + "!")\n',
         language: 'pyh',
         theme: 'pyhyeon-dark',
         automaticLayout: true,
@@ -496,10 +577,48 @@ function App() {
           style={{ width: `${editorWidth}%` }}
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800/50 bg-black/10">
-            <div className="flex items-center gap-2 text-sm text-gray-300">
-              <Code2 className="w-4 h-4" />
-              main.pyh
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-sm text-gray-300">
+                <Code2 className="w-4 h-4" />
+                main.pyh
+              </div>
+              
+              {/* Examples dropdown */}
+              {examples.length > 0 && (
+                <div className="flex items-center gap-2 border-l border-gray-700 pl-3">
+                  <FileCode className="w-4 h-4 text-gray-400" />
+                  <Select value={selectedExample} onValueChange={loadExample}>
+                    <SelectTrigger className="w-[240px] h-8 bg-black/30 border-gray-700 text-gray-200 text-xs">
+                      <SelectValue placeholder="예제 파일 선택..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-900 border-gray-700 text-gray-200 max-h-[400px]">
+                      {Object.entries(
+                        examples.reduce((acc, ex) => {
+                          if (!acc[ex.category]) acc[ex.category] = []
+                          acc[ex.category].push(ex)
+                          return acc
+                        }, {} as Record<string, Example[]>)
+                      ).map(([category, categoryExamples]) => (
+                        <SelectGroup key={category}>
+                          <SelectLabel className="text-gray-400">{category}</SelectLabel>
+                          {categoryExamples.map(ex => (
+                            <SelectItem 
+                              key={ex.id} 
+                              value={ex.id}
+                              className="text-gray-200 focus:bg-gray-800 focus:text-white"
+                            >
+                              <span className="font-mono text-xs">{ex.name}</span>
+                              <span className="text-gray-500 ml-2 text-xs">- {ex.description}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
+            
             {vmState === 'running' || vmState === 'waiting_for_input' ? (
               <Button 
                 onClick={onStop}
