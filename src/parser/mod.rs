@@ -323,6 +323,18 @@ where
             .map(|(condition, body)| Stmt::While { condition, body })
             .labelled("while statement");
 
+        let for_stmt = just(Token::For)
+            .ignore_then(ident.clone())
+            .then_ignore(just(Token::In))
+            .then(expr.clone())
+            .then(block.clone())
+            .map(|((var, iterable), body)| Stmt::For {
+                var,
+                iterable,
+                body,
+            })
+            .labelled("for statement");
+
         // Class statement
         let method_def = just(Token::Def)
             .ignore_then(ident.clone())
@@ -367,7 +379,7 @@ where
             .labelled("class statement");
 
         // Compound statements occupy the whole logical line
-        let compound_stmt_line = choice((class_stmt, def_stmt, if_stmt, while_stmt))
+        let compound_stmt_line = choice((class_stmt, def_stmt, if_stmt, while_stmt, for_stmt))
             .map_with(|node: Stmt, e| {
                 let s: I::Span = e.span();
                 (node, s.into_range())

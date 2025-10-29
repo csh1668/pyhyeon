@@ -230,7 +230,7 @@ function App() {
       monaco.languages.setMonarchTokensProvider('pyh', {
         // 현재 pyhyeon에 구현된 키워드들
         keywords: [
-          'if', 'elif', 'else', 'while', 'def', 'return', 
+          'if', 'elif', 'else', 'while', 'for', 'in', 'def', 'return', 
           'and', 'or', 'not', 'class'
         ],
         
@@ -241,7 +241,7 @@ function App() {
         special: ['self'],
         
         // 내장 함수들
-        builtins: ['print', 'input', 'int', 'bool', 'str', 'len'],
+        builtins: ['print', 'input', 'int', 'bool', 'str', 'len', 'range'],
         
         // 연산자들
         operators: [

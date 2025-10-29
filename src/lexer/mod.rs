@@ -156,6 +156,8 @@ impl<'source> Lexer<'source> {
             RawToken::Elif => Token::Elif,
             RawToken::Else => Token::Else,
             RawToken::While => Token::While,
+            RawToken::For => Token::For,
+            RawToken::In => Token::In,
             RawToken::Def => Token::Def,
             RawToken::Return => Token::Return,
             RawToken::And => Token::And,

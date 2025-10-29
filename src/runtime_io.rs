@@ -16,7 +16,6 @@ pub trait RuntimeIo {
     fn write_line(&mut self, s: &str);
     fn write(&mut self, s: &str);
     fn read_line(&mut self) -> ReadResult;
-    /// Read a line with optional prompt. Prompt is shown only on first call.
     fn read_line_with_prompt(&mut self, prompt: Option<&str>) -> ReadResult;
 }
 
@@ -110,7 +109,7 @@ impl RuntimeIo for BufferIo {
                 self.last_prompt = Some(p.to_string());
             }
         }
-        
+
         match self.read_line() {
             ReadResult::Ok(line) => {
                 // Clear last_prompt after successful read

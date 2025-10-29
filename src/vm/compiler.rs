@@ -135,6 +135,58 @@ impl Compiler {
                 let end = fun.code.len() as i32;
                 patch_rel(&mut fun.code[j_break], end - (j_break as i32 + 1));
             }
+            Stmt::For { var, iterable, body } => {
+                // for문 desugaring:
+                // for var in iterable:
+                //     body
+                // =>
+                // __iter_temp__ = iterable.__iter__()
+                // while __iter_temp__.__has_next__():
+                //     var = __iter_temp__.__next__()
+                //     body
+                
+                // 1. iterable.__iter__() 호출하여 iterator 생성
+                self.emit_expr(iterable, fun);
+                let iter_method = self.intern("__iter__");
+                fun.code.push(I::CallMethod(iter_method, 0));
+                
+                // 2. iterator를 임시 global 변수에 저장
+                let iter_temp_name = format!("__for_iter_{}__", fun.code.len());
+                let iter_temp_sym = self.intern(&iter_temp_name);
+                fun.code.push(I::StoreGlobal(iter_temp_sym));
+                
+                // 3. while 루프 시작
+                let loop_start = fun.code.len() as i32;
+                
+                // 4. __iter_temp__.__has_next__() 호출
+                fun.code.push(I::LoadGlobal(iter_temp_sym));
+                let has_next_method = self.intern("__has_next__");
+                fun.code.push(I::CallMethod(has_next_method, 0));
+                
+                // 5. has_next가 false면 루프 종료
+                let j_break = fun.code.len();
+                fun.code.push(I::JumpIfFalse(0));
+                
+                // 6. __iter_temp__.__next__() 호출하여 값 가져오기
+                fun.code.push(I::LoadGlobal(iter_temp_sym));
+                let next_method = self.intern("__next__");
+                fun.code.push(I::CallMethod(next_method, 0));
+                
+                // 7. 루프 변수에 할당
+                let var_sym = self.sym_id(var);
+                fun.code.push(I::StoreGlobal(var_sym));
+                
+                // 8. body 실행
+                self.emit_block(body, fun);
+                
+                // 9. 루프 시작으로 jump
+                let cur = fun.code.len() as i32;
+                fun.code.push(I::Jump(loop_start - (cur + 1)));
+                
+                // 10. break 지점 패치
+                let end = fun.code.len() as i32;
+                patch_rel(&mut fun.code[j_break], end - (j_break as i32 + 1));
+            }
             Stmt::Def { name, params, body } => {
                 // compile function body with locals mapping (params + assigned names)
                 let name_sym = self.intern(name);
@@ -178,12 +230,17 @@ impl Compiler {
                 let class_id = self.module.classes.len();
                 self.module.classes.push(class_def.clone());
 
-                // 클래스를 global 변수로 저장
+                // Phase 4: UserClass를 Object로 저장
                 let name_sym = self.intern(name);
                 let const_id = self.module.consts.len();
-                self.module
-                    .consts
-                    .push(super::bytecode::Value::UserClass(Rc::new(class_def)));
+                let class_obj = super::bytecode::Value::Object(Rc::new(super::value::Object::new(
+                    super::type_def::TYPE_USER_START + class_id as u16,
+                    super::value::ObjectData::UserClass {
+                        class_id: class_id as u16,
+                        methods: class_def.methods.clone(),
+                    },
+                )));
+                self.module.consts.push(class_obj);
                 fun.code.push(I::LoadConst(const_id as u32));
                 fun.code.push(I::StoreGlobal(name_sym));
             }
@@ -487,6 +544,59 @@ impl Compiler {
                 let end = fun.code.len() as i32;
                 patch_rel(&mut fun.code[j_break], end - (j_break as i32 + 1));
             }
+            Stmt::For { var, iterable, body } => {
+                // for문 desugaring (locals 버전)
+                
+                // 1. iterable.__iter__() 호출하여 iterator 생성
+                self.emit_expr_with_locals(iterable, fun, locals);
+                let iter_method = self.intern("__iter__");
+                fun.code.push(I::CallMethod(iter_method, 0));
+                
+                // 2. iterator를 임시 변수에 저장 (local 또는 global)
+                let iter_temp_name = format!("__for_iter_{}__", fun.code.len());
+                let iter_temp_sym = self.intern(&iter_temp_name);
+                
+                // 임시 변수는 항상 global로 저장 (locals map에 없음)
+                fun.code.push(I::StoreGlobal(iter_temp_sym));
+                
+                // 3. while 루프 시작
+                let loop_start = fun.code.len() as i32;
+                
+                // 4. __iter_temp__.__has_next__() 호출
+                fun.code.push(I::LoadGlobal(iter_temp_sym));
+                let has_next_method = self.intern("__has_next__");
+                fun.code.push(I::CallMethod(has_next_method, 0));
+                
+                // 5. has_next가 false면 루프 종료
+                let j_break = fun.code.len();
+                fun.code.push(I::JumpIfFalse(0));
+                
+                // 6. __iter_temp__.__next__() 호출하여 값 가져오기
+                fun.code.push(I::LoadGlobal(iter_temp_sym));
+                let next_method = self.intern("__next__");
+                fun.code.push(I::CallMethod(next_method, 0));
+                
+                // 7. 루프 변수에 할당 (local 또는 global)
+                if let Some(ix) = locals.get(var) {
+                    fun.code.push(I::StoreLocal(*ix));
+                } else {
+                    let var_sym = self.sym_id(var);
+                    fun.code.push(I::StoreGlobal(var_sym));
+                }
+                
+                // 8. body 실행
+                for s in body {
+                    self.emit_stmt_with_locals(s, fun, locals);
+                }
+                
+                // 9. 루프 시작으로 jump
+                let cur = fun.code.len() as i32;
+                fun.code.push(I::Jump(loop_start - (cur + 1)));
+                
+                // 10. break 지점 패치
+                let end = fun.code.len() as i32;
+                patch_rel(&mut fun.code[j_break], end - (j_break as i32 + 1));
+            }
             Stmt::Def { name, params, body } => {
                 // nested function
                 let name_sym = self.intern(name);
@@ -529,11 +639,16 @@ impl Compiler {
                 let class_id = self.module.classes.len();
                 self.module.classes.push(class_def.clone());
 
-                // 클래스를 local/global 변수로 저장
+                // Phase 4: UserClass를 Object로 저장
                 let const_id = self.module.consts.len();
-                self.module
-                    .consts
-                    .push(super::bytecode::Value::UserClass(Rc::new(class_def)));
+                let class_obj = super::bytecode::Value::Object(Rc::new(super::value::Object::new(
+                    super::type_def::TYPE_USER_START + class_id as u16,
+                    super::value::ObjectData::UserClass {
+                        class_id: class_id as u16,
+                        methods: class_def.methods.clone(),
+                    },
+                )));
+                self.module.consts.push(class_obj);
                 fun.code.push(I::LoadConst(const_id as u32));
 
                 if let Some(ix) = locals.get(name) {
@@ -710,6 +825,11 @@ fn collect_locals(params: &Vec<String>, body: &Vec<StmtS>) -> HashMap<String, u1
                 Stmt::While { body, .. } => {
                     walk(body, seen);
                 }
+                Stmt::For { var, body, .. } => {
+                    // for문의 루프 변수도 local로 수집
+                    seen.insert(var.clone());
+                    walk(body, seen);
+                }
                 Stmt::Return(_) | Stmt::Expr(_) => {}
             }
         }
@@ -753,6 +873,7 @@ fn builtin_id(name: &str) -> Option<u8> {
         "bool" => Some(3),
         "str" => Some(4),
         "len" => Some(5),
+        "range" => Some(6),
         _ => None,
     }
 }

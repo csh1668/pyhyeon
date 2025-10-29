@@ -13,6 +13,10 @@ pub enum RawToken {
     Else,
     #[token("while")]
     While,
+    #[token("for")]
+    For,
+    #[token("in")]
+    In,
     #[token("def")]
     Def,
     #[token("return")]

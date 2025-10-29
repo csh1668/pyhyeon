@@ -1,0 +1,5 @@
+# 기본 range(n) 테스트
+for i in range(5):
+  print(i)
+
+

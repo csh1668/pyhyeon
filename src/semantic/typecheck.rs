@@ -223,6 +223,21 @@ fn tc_stmt(
             });
             Ok(())
         }
+        Stmt::For { var, iterable, body } => {
+            // iterable의 타입을 확인 (현재는 range만 지원)
+            let _iterable_ty = tc_expr(iterable, tenv, ctx)?;
+            
+            // for문 내부는 별도 환경에서 타입 체크
+            let mut loop_env = snapshot_env(tenv);
+            with_env(&mut loop_env, |e| {
+                // 루프 변수는 Unknown 타입으로 시작 (range는 Int를 생성)
+                e.set(var.clone(), Ty::Unknown);
+                for s in body {
+                    let _ = tc_stmt(s, e, ctx, current_fn_return);
+                }
+            });
+            Ok(())
+        }
         Stmt::Def {
             name: _,
             params,
@@ -393,6 +408,33 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                                 });
                             }
                             return Ok(Ty::Int);
+                        }
+                        "range" => {
+                            // range(stop) or range(start, stop) or range(start, stop, step)
+                            // 모든 인자는 Int여야 함
+                            if args.len() < 1 || args.len() > 3 {
+                                return Err(SemanticError {
+                                    message: format!(
+                                        "TypeError: range() takes 1 to 3 arguments, got {}",
+                                        args.len()
+                                    ),
+                                    span: expr.1.clone(),
+                                });
+                            }
+                            for arg in args {
+                                let arg_ty = tc_expr(arg, tenv, ctx)?;
+                                if arg_ty != Ty::Int && arg_ty != Ty::Unknown {
+                                    return Err(SemanticError {
+                                        message: format!(
+                                            "TypeError: range() arguments must be integers, got {:?}",
+                                            arg_ty
+                                        ),
+                                        span: expr.1.clone(),
+                                    });
+                                }
+                            }
+                            // range는 iterator 객체를 반환 (타입 시스템에서는 Unknown으로 처리)
+                            return Ok(Ty::Unknown);
                         }
                         _ => return Ok(Ty::Unknown),
                     }

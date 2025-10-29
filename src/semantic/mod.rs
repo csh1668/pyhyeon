@@ -117,6 +117,19 @@ fn analyze_stmt_module(
             }
             Ok(())
         }
+        Stmt::For { var, iterable, body } => {
+            // iterable 표현식 분석
+            analyze_expr_module(iterable, scopes, ctx)?;
+            
+            // 루프 변수를 현재 스코프에 정의
+            scopes.define(var.clone());
+            
+            // body 분석
+            for s in body {
+                analyze_stmt_module(s, scopes, ctx)?;
+            }
+            Ok(())
+        }
         Stmt::Return(expr) => analyze_expr_module(expr, scopes, ctx),
         Stmt::Expr(expr) => analyze_expr_module(expr, scopes, ctx),
         Stmt::Class { name, methods, .. } => {
@@ -266,6 +279,11 @@ fn collect_locals(body: &Vec<StmtS>, locals: &mut HashSet<String>) {
             Stmt::While { body, .. } => {
                 collect_locals(body, locals);
             }
+            Stmt::For { var, body, .. } => {
+                // 루프 변수를 local로 수집
+                locals.insert(var.clone());
+                collect_locals(body, locals);
+            }
             Stmt::Return(_) | Stmt::Expr(_) => {}
         }
     }
@@ -339,6 +357,21 @@ fn analyze_stmt_function(
         }
         Stmt::While { condition, body } => {
             analyze_expr_function(condition, scopes, ctx, locals, assigned)?;
+            for s in body {
+                analyze_stmt_function(s, scopes, ctx, locals, assigned)?;
+            }
+            Ok(())
+        }
+        Stmt::For { var, iterable, body } => {
+            // iterable 표현식 분석
+            analyze_expr_function(iterable, scopes, ctx, locals, assigned)?;
+            
+            // 루프 변수가 할당됨을 표시
+            if locals.contains(var) {
+                assigned.insert(var.clone());
+            }
+            
+            // body 분석
             for s in body {
                 analyze_stmt_function(s, scopes, ctx, locals, assigned)?;
             }
@@ -473,7 +506,7 @@ mod tests {
                 ))))],
             }),
             make_stmt(Stmt::Expr(make_expr(Expr::Call {
-                func_name: "foo".to_string(),
+                func_name: Box::new(make_expr(Expr::Variable("foo".to_string()))),
                 args: vec![],
             }))),
         ];
@@ -485,7 +518,7 @@ mod tests {
     #[test]
     fn test_analyze_undefined_function() {
         let program = vec![make_stmt(Stmt::Expr(make_expr(Expr::Call {
-            func_name: "undefined".to_string(),
+            func_name: Box::new(make_expr(Expr::Variable("undefined".to_string()))),
             args: vec![],
         })))];
 
@@ -537,7 +570,7 @@ mod tests {
     #[test]
     fn test_analyze_builtin_function() {
         let program = vec![make_stmt(Stmt::Expr(make_expr(Expr::Call {
-            func_name: "print".to_string(),
+            func_name: Box::new(make_expr(Expr::Variable("print".to_string()))),
             args: vec![make_expr(Expr::Literal(Literal::Int(42)))],
         })))];
 

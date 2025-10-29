@@ -1,8 +1,9 @@
 use super::bytecode::{
     BUILTIN_BOOL_ID, BUILTIN_INPUT_ID, BUILTIN_INT_ID, BUILTIN_LEN_ID, BUILTIN_PRINT_ID,
-    BUILTIN_STR_ID, BuiltinClassType, BuiltinObject, BuiltinObjectData, ClassDef, Instruction as I,
-    Module, UserObject, Value,
+    BUILTIN_RANGE_ID, BUILTIN_STR_ID, ClassDef, Instruction as I, Module, Value,
 };
+use super::type_def::{BuiltinClassType, TYPE_RANGE};
+use super::value::{BuiltinInstanceData, Object, ObjectData};
 use crate::runtime_io::RuntimeIo;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -136,7 +137,8 @@ impl Vm {
                 }
                 I::ConstStr(i) => {
                     let s = module.string_pool[*i as usize].clone();
-                    self.push(Value::String(s))?;
+                    // String을 Object로 생성 (통일된 타입 시스템)
+                    self.push(self.make_string(s))?;
                 }
                 I::LoadConst(i) => {
                     let v = module.consts[*i as usize].clone();
@@ -183,12 +185,16 @@ impl Vm {
                     *slot = Some(v);
                 }
                 I::Add => {
-                    // let (b, a) = (self.pop_int()?, self.pop_int()?);
-                    // self.push(Value::Int(a.wrapping_add(b)))?;
                     let (b, a) = (self.pop()?, self.pop()?);
-                    let result = match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => Value::Int(x.wrapping_add(y)),
-                        (Value::String(x), Value::String(y)) => Value::String(x + &y),
+                    let result = match (&a, &b) {
+                        // Int + Int
+                        (Value::Int(x), Value::Int(y)) => Value::Int(x.wrapping_add(*y)),
+                        // String + String (Object 기반)
+                        _ if self.is_string_object(&a) && self.is_string_object(&b) => {
+                            let s1 = self.expect_string(&a)?;
+                            let s2 = self.expect_string(&b)?;
+                            self.make_string(s1.to_string() + s2)
+                        }
                         _ => {
                             return Err(err(
                                 VmErrorKind::TypeError("add"),
@@ -204,13 +210,33 @@ impl Vm {
                 }
                 I::Mul => {
                     let (b, a) = (self.pop()?, self.pop()?);
-                    let result = match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => Value::Int(x.wrapping_mul(y)),
-                        (Value::String(s), Value::Int(n)) | (Value::Int(n), Value::String(s)) => {
-                            if n < 0 {
-                                Value::String(String::new())
+                    let result = match (&a, &b) {
+                        // Int * Int
+                        (Value::Int(x), Value::Int(y)) => Value::Int(x.wrapping_mul(*y)),
+                        // String * Int (반복)
+                        _ if self.is_string_object(&a) && matches!(b, Value::Int(_)) => {
+                            let s = self.expect_string(&a)?;
+                            if let Value::Int(n) = b {
+                                if n < 0 {
+                                    self.make_string(String::new())
+                                } else {
+                                    self.make_string(s.repeat(n as usize))
+                                }
                             } else {
-                                Value::String(s.repeat(n as usize))
+                                unreachable!()
+                            }
+                        }
+                        // Int * String (반복, 순서 바꿈)
+                        _ if matches!(a, Value::Int(_)) && self.is_string_object(&b) => {
+                            let s = self.expect_string(&b)?;
+                            if let Value::Int(n) = a {
+                                if n < 0 {
+                                    self.make_string(String::new())
+                                } else {
+                                    self.make_string(s.repeat(n as usize))
+                                }
+                            } else {
+                                unreachable!()
                             }
                         }
                         _ => {
@@ -260,9 +286,15 @@ impl Vm {
                 }
                 I::Lt => {
                     let (b, a) = (self.pop()?, self.pop()?);
-                    let result = match (a, b) {
+                    let result = match (&a, &b) {
+                        // Int < Int
                         (Value::Int(x), Value::Int(y)) => x < y,
-                        (Value::String(x), Value::String(y)) => x < y,
+                        // String < String (사전순)
+                        _ if self.is_string_object(&a) && self.is_string_object(&b) => {
+                            let s1 = self.expect_string(&a)?;
+                            let s2 = self.expect_string(&b)?;
+                            s1 < s2
+                        }
                         _ => {
                             return Err(err(
                                 VmErrorKind::TypeError("compare"),
@@ -274,9 +306,15 @@ impl Vm {
                 }
                 I::Le => {
                     let (b, a) = (self.pop()?, self.pop()?);
-                    let result = match (a, b) {
+                    let result = match (&a, &b) {
+                        // Int <= Int
                         (Value::Int(x), Value::Int(y)) => x <= y,
-                        (Value::String(x), Value::String(y)) => x <= y,
+                        // String <= String (사전순)
+                        _ if self.is_string_object(&a) && self.is_string_object(&b) => {
+                            let s1 = self.expect_string(&a)?;
+                            let s2 = self.expect_string(&b)?;
+                            s1 <= s2
+                        }
                         _ => {
                             return Err(err(
                                 VmErrorKind::TypeError("compare"),
@@ -288,9 +326,15 @@ impl Vm {
                 }
                 I::Gt => {
                     let (b, a) = (self.pop()?, self.pop()?);
-                    let result = match (a, b) {
+                    let result = match (&a, &b) {
+                        // Int > Int
                         (Value::Int(x), Value::Int(y)) => x > y,
-                        (Value::String(x), Value::String(y)) => x > y,
+                        // String > String (사전순)
+                        _ if self.is_string_object(&a) && self.is_string_object(&b) => {
+                            let s1 = self.expect_string(&a)?;
+                            let s2 = self.expect_string(&b)?;
+                            s1 > s2
+                        }
                         _ => {
                             return Err(err(
                                 VmErrorKind::TypeError("compare"),
@@ -302,9 +346,15 @@ impl Vm {
                 }
                 I::Ge => {
                     let (b, a) = (self.pop()?, self.pop()?);
-                    let result = match (a, b) {
+                    let result = match (&a, &b) {
+                        // Int >= Int
                         (Value::Int(x), Value::Int(y)) => x >= y,
-                        (Value::String(x), Value::String(y)) => x >= y,
+                        // String >= String (사전순)
+                        _ if self.is_string_object(&a) && self.is_string_object(&b) => {
+                            let s1 = self.expect_string(&a)?;
+                            let s2 = self.expect_string(&b)?;
+                            s1 >= s2
+                        }
                         _ => {
                             return Err(err(
                                 VmErrorKind::TypeError("compare"),
@@ -377,14 +427,14 @@ impl Vm {
                                 let prompt = self.stack.last().ok_or_else(|| {
                                     err(VmErrorKind::StackUnderflow, "stack underflow".into())
                                 })?;
-                                match prompt {
-                                    Value::String(s) => Some(s.as_str()),
-                                    _ => {
-                                        return Err(err(
-                                            VmErrorKind::TypeError("input"),
-                                            "prompt must be a string".to_string(),
-                                        ));
-                                    }
+                                // Object에서 String 프롬프트 추출
+                                if self.is_string_object(prompt) {
+                                    Some(self.expect_string(prompt)?)
+                                } else {
+                                    return Err(err(
+                                        VmErrorKind::TypeError("input"),
+                                        "prompt must be a string".to_string(),
+                                    ));
                                 }
                             } else {
                                 None
@@ -398,8 +448,8 @@ impl Vm {
                                     if argc == 1 {
                                         self.pop()?;
                                     }
-                                    // Push the input result
-                                    self.push(Value::String(line.trim().to_string()))?;
+                                    // input 결과를 String Object로 반환
+                                    self.push(self.make_string(line.trim().to_string()))?;
                                     self.state = VmState::Running;
                                 }
                                 ReadResult::WaitingForInput => {
@@ -457,17 +507,9 @@ impl Vm {
                                 ));
                             }
                             let v = self.pop()?;
-                            let s = match v {
-                                Value::Int(i) => i.to_string(),
-                                Value::Bool(b) => (if b { "True" } else { "False" }).to_string(),
-                                Value::String(s) => s,
-                                Value::None => "None".to_string(),
-                                Value::UserClass(c) => format!("<class '{}'>", c.name),
-                                Value::UserObject(_) => "<object>".to_string(),
-                                Value::BuiltinClass(bt) => format!("<class '{:?}'>", bt),
-                                Value::BuiltinObject(_) => "<object>".to_string(),
-                            };
-                            self.push(Value::String(s))?;
+                            // Phase 4: display_value 재사용
+                            let s = display_value(&v);
+                            self.push(self.make_string(s))?;
                         }
                         BUILTIN_LEN_ID => {
                             if argc != 1 {
@@ -480,17 +522,27 @@ impl Vm {
                                 ));
                             }
                             let v = self.pop()?;
-                            match v {
-                                Value::String(s) => {
-                                    self.push(Value::Int(s.chars().count() as i64))?;
-                                }
-                                _ => {
-                                    return Err(err(
-                                        VmErrorKind::TypeError("len"),
-                                        "len() requires a string".into(),
-                                    ));
-                                }
+                            // String Object에서 길이 구하기
+                            if self.is_string_object(&v) {
+                                let s = self.expect_string(&v)?;
+                                self.push(Value::Int(s.chars().count() as i64))?;
+                            } else {
+                                return Err(err(
+                                    VmErrorKind::TypeError("len"),
+                                    "len() requires a string".into(),
+                                ));
                             }
+                        }
+                        BUILTIN_RANGE_ID => {
+                            // range(stop) or range(start, stop) or range(start, stop, step)
+                            let mut args = Vec::with_capacity(argc);
+                            for _ in 0..argc {
+                                args.push(self.pop()?);
+                            }
+                            args.reverse();
+                            
+                            let result = self.create_builtin_instance(BuiltinClassType::Range, args)?;
+                            self.push(result)?;
                         }
                         _ => {
                             return Err(err(
@@ -503,7 +555,7 @@ impl Vm {
                 I::CallValue(argc) => {
                     let argc = *argc as usize;
                     // 인자들 팝
-                    let mut args = Vec::new();
+                    let mut args = Vec::with_capacity(argc);
                     for _ in 0..argc {
                         args.push(self.pop()?);
                     }
@@ -513,67 +565,60 @@ impl Vm {
                     let callable = self.pop()?;
 
                     // callable 타입에 따라 호출
-                    match callable {
-                        Value::UserClass(class_def) => {
-                            // 인스턴스 생성
-                            let class_id = module
-                                .classes
-                                .iter()
-                                .position(|c| c.name == class_def.name)
-                                .ok_or_else(|| {
-                                    err(
-                                        VmErrorKind::TypeError("class"),
-                                        format!("Class '{}' not found", class_def.name),
-                                    )
-                                })? as u16;
+                    match &callable {
+                        // Phase 4: 모든 callable이 Object로 통합
+                        Value::Object(obj) => match &obj.data {
+                            // 사용자 정의 클래스 호출
+                            ObjectData::UserClass { class_id, methods } => {
+                                // 인스턴스 생성
+                                let instance_value = self.make_user_instance(*class_id);
 
-                            let instance = UserObject {
-                                class_id,
-                                attributes: HashMap::new(),
-                            };
-                            let instance_value = Value::UserObject(Rc::new(RefCell::new(instance)));
+                                // __init__ 메서드가 있으면 호출
+                                if let Some(&init_func_id) = methods.get("__init__") {
+                                    // __init__(self, *args) 호출
+                                    let mut init_args = vec![instance_value.clone()];
+                                    init_args.extend(args);
+                                    let num_args = init_args.len();
 
-                            // __init__ 메서드가 있으면 호출 (동기적으로)
-                            if let Some(&init_func_id) = class_def.methods.get("__init__") {
-                                // __init__(self, *args) 호출
-                                let mut init_args = vec![instance_value.clone()];
-                                init_args.extend(args);
-                                let num_args = init_args.len();
+                                    // 인자를 순서대로 스택에 푸시
+                                    for arg in init_args {
+                                        self.push(arg)?;
+                                    }
 
-                                // 인자를 순서대로 스택에 푸시 (enter_func이 역순으로 팝)
-                                for arg in init_args {
-                                    self.push(arg)?;
+                                    // __init__ 함수 호출
+                                    self.enter_func(module, init_func_id as usize, num_args)?;
+
+                                    // 스택에 instance를 먼저 저장 (return 시 instance가 남도록)
+                                    self.stack.insert(
+                                        self.frames.last().unwrap().ret_stack_size,
+                                        instance_value,
+                                    );
+                                    continue;
+                                } else if !args.is_empty() {
+                                    let class_def = &module.classes[*class_id as usize];
+                                    return Err(err(
+                                        VmErrorKind::ArityError {
+                                            expected: 0,
+                                            got: args.len(),
+                                        },
+                                        format!("{}() takes no arguments", class_def.name),
+                                    ));
                                 }
 
-                                // __init__ 함수 호출 및 즉시 실행
-                                self.enter_func(module, init_func_id as usize, num_args)?;
-
-                                // __init__을 완전히 실행 (재귀적으로 run 호출하지 않고 loop에서 실행될 것임)
-                                // 하지만 인스턴스를 별도로 스택 아래에 저장해둠
-                                // 대신: __init__이 Return하면 그 반환값을 버리고 instance를 푸시
-                                //
-                                // 더 간단한 방법: 스택에 instance를 먼저 저장
-                                self.stack.insert(
-                                    self.frames.last().unwrap().ret_stack_size,
-                                    instance_value,
-                                );
-                                continue;
-                            } else if !args.is_empty() {
+                                self.push(instance_value)?;
+                            }
+                            // Builtin 클래스 호출 (range 등)
+                            ObjectData::BuiltinClass { class_type } => {
+                                let result = self.create_builtin_instance(*class_type, args)?;
+                                self.push(result)?;
+                            }
+                            _ => {
                                 return Err(err(
-                                    VmErrorKind::ArityError {
-                                        expected: 0,
-                                        got: args.len(),
-                                    },
-                                    format!("{}() takes no arguments", class_def.name),
+                                    VmErrorKind::TypeError("callable"),
+                                    format!("{:?} is not callable", callable),
                                 ));
                             }
-
-                            self.push(instance_value)?;
-                        }
-                        Value::BuiltinClass(bt) => {
-                            let result = self.create_builtin_instance(bt, args)?;
-                            self.push(result)?;
-                        }
+                        },
                         _ => {
                             return Err(err(
                                 VmErrorKind::TypeError("callable"),
@@ -584,84 +629,25 @@ impl Vm {
                 }
                 I::CallMethod(method_sym, argc) => {
                     let argc = *argc as usize;
-                    // 인자들 팝
-                    let mut args = Vec::new();
-                    for _ in 0..argc {
-                        args.push(self.pop()?);
-                    }
-                    args.reverse();
-
-                    // receiver 팝
-                    let receiver = self.pop()?;
-
-                    // 메서드 이름 가져오기
-                    let method_name = &module.symbols[*method_sym as usize];
-
-                    // 타입별 dispatch
-                    let result = match &receiver {
-                        // String 메서드
-                        Value::String(s) => self.call_string_method(s, method_name, args)?,
-                        // Built-in Object 메서드
-                        Value::BuiltinObject(obj_rc) => {
-                            let obj = obj_rc.borrow();
-                            self.call_builtin_method(&obj, method_name, args)?
-                        }
-                        // User Object 메서드
-                        Value::UserObject(obj_rc) => {
-                            let obj = obj_rc.borrow();
-                            let class_def = &module.classes[obj.class_id as usize];
-
-                            // 메서드 테이블에서 찾기
-                            let func_id = class_def.methods.get(method_name).ok_or_else(|| {
-                                err(
-                                    VmErrorKind::TypeError("method"),
-                                    format!("'{}' has no method '{}'", class_def.name, method_name),
-                                )
-                            })?;
-
-                            // self를 첫 번째 인자로 추가
-                            let mut full_args = vec![receiver.clone()];
-                            full_args.extend(args);
-                            let num_args = full_args.len();
-
-                            // 인자를 순서대로 스택에 푸시 (enter_func이 역순으로 팝)
-                            for arg in full_args {
-                                self.push(arg)?;
-                            }
-
-                            // 함수 호출
-                            drop(obj); // borrow 해제
-                            self.enter_func(module, *func_id as usize, num_args)?;
-                            continue;
-                        }
-                        _ => {
-                            return Err(err(
-                                VmErrorKind::TypeError("method call"),
-                                format!("{:?} has no methods", receiver),
-                            ));
-                        }
-                    };
-
-                    self.push(result)?;
+                    // 통일된 메서드 호출 핸들러
+                    self.handle_call_method(*method_sym, argc, module, io)?;
                 }
                 I::LoadAttr(attr_sym) => {
-                    let obj = self.pop()?;
+                    let obj_value = self.pop()?;
                     let attr_name = &module.symbols[*attr_sym as usize];
 
-                    let value = match &obj {
-                        Value::UserObject(obj_rc) => {
-                            let obj = obj_rc.borrow();
-                            obj.attributes.get(attr_name).cloned().ok_or_else(|| {
-                                err(
-                                    VmErrorKind::TypeError("attribute"),
-                                    format!("Object has no attribute '{}'", attr_name),
-                                )
-                            })?
-                        }
+                    // Phase 4: 모든 Object에서 속성 로드 가능
+                    let value = match &obj_value {
+                        Value::Object(obj) => obj.get_attr(attr_name).ok_or_else(|| {
+                            err(
+                                VmErrorKind::TypeError("attribute"),
+                                format!("Object has no attribute '{}'", attr_name),
+                            )
+                        })?,
                         _ => {
                             return Err(err(
                                 VmErrorKind::TypeError("attribute access"),
-                                format!("{:?} has no attributes", obj),
+                                format!("{:?} has no attributes", obj_value),
                             ));
                         }
                     };
@@ -670,13 +656,25 @@ impl Vm {
                 }
                 I::StoreAttr(attr_sym) => {
                     let value = self.pop()?;
-                    let obj = self.pop()?;
+                    let obj_value = self.pop()?;
                     let attr_name = &module.symbols[*attr_sym as usize];
 
-                    match obj {
-                        Value::UserObject(obj_rc) => {
-                            let mut obj = obj_rc.borrow_mut();
-                            obj.attributes.insert(attr_name.clone(), value);
+                    // Phase 4: 모든 Object에 속성 저장 가능
+                    match obj_value {
+                        Value::Object(obj) => {
+                            // Object는 Rc이므로 내부 가변성 사용
+                            // set_attr는 &mut를 받지만, Rc::get_mut는 사용 불가
+                            // attributes가 RefCell이므로 borrow_mut 사용
+                            if let Some(ref attrs) = obj.attributes {
+                                attrs.borrow_mut().insert(attr_name.clone(), value);
+                            } else {
+                                // attributes가 None이면 생성 필요
+                                // 하지만 Rc 안의 Object를 수정할 수 없으므로 에러
+                                return Err(err(
+                                    VmErrorKind::TypeError("attribute assignment"),
+                                    "Cannot add attributes to immutable object".into(),
+                                ));
+                            }
                         }
                         _ => {
                             return Err(err(
@@ -802,29 +800,15 @@ impl Vm {
     fn create_builtin_instance(&self, bt: BuiltinClassType, args: Vec<Value>) -> VmResult<Value> {
         match bt {
             BuiltinClassType::Range => {
-                let instance = match args.len() {
+                match args.len() {
                     1 => {
                         let stop = self.expect_int_val(&args[0])?;
-                        BuiltinObject {
-                            class_type: BuiltinClassType::Range,
-                            data: BuiltinObjectData::Range {
-                                current: 0,
-                                stop,
-                                step: 1,
-                            },
-                        }
+                        Ok(self.make_range(0, stop, 1))
                     }
                     2 => {
                         let start = self.expect_int_val(&args[0])?;
                         let stop = self.expect_int_val(&args[1])?;
-                        BuiltinObject {
-                            class_type: BuiltinClassType::Range,
-                            data: BuiltinObjectData::Range {
-                                current: start,
-                                stop,
-                                step: 1,
-                            },
-                        }
+                        Ok(self.make_range(start, stop, 1))
                     }
                     3 => {
                         let start = self.expect_int_val(&args[0])?;
@@ -838,104 +822,22 @@ impl Vm {
                             ));
                         }
 
-                        BuiltinObject {
-                            class_type: BuiltinClassType::Range,
-                            data: BuiltinObjectData::Range {
-                                current: start,
-                                stop,
-                                step,
-                            },
-                        }
+                        Ok(self.make_range(start, stop, step))
                     }
-                    _ => {
-                        return Err(err(
-                            VmErrorKind::ArityError {
-                                expected: 3,
-                                got: args.len(),
-                            },
-                            "range() takes 1 to 3 arguments".into(),
-                        ));
-                    }
-                };
-
-                Ok(Value::BuiltinObject(Rc::new(RefCell::new(instance))))
+                    _ => Err(err(
+                        VmErrorKind::ArityError {
+                            expected: 3,
+                            got: args.len(),
+                        },
+                        "range() takes 1 to 3 arguments".into(),
+                    )),
+                }
             }
         }
     }
 
-    // String 메서드
-    fn call_string_method(&self, s: &str, method: &str, args: Vec<Value>) -> VmResult<Value> {
-        match method {
-            "upper" => {
-                if !args.is_empty() {
-                    return Err(err(
-                        VmErrorKind::ArityError {
-                            expected: 0,
-                            got: args.len(),
-                        },
-                        "upper() takes no arguments".into(),
-                    ));
-                }
-                Ok(Value::String(s.to_uppercase()))
-            }
-            "lower" => {
-                if !args.is_empty() {
-                    return Err(err(
-                        VmErrorKind::ArityError {
-                            expected: 0,
-                            got: args.len(),
-                        },
-                        "lower() takes no arguments".into(),
-                    ));
-                }
-                Ok(Value::String(s.to_lowercase()))
-            }
-            "strip" => {
-                if !args.is_empty() {
-                    return Err(err(
-                        VmErrorKind::ArityError {
-                            expected: 0,
-                            got: args.len(),
-                        },
-                        "strip() takes no arguments".into(),
-                    ));
-                }
-                Ok(Value::String(s.trim().to_string()))
-            }
-            _ => Err(err(
-                VmErrorKind::TypeError("method"),
-                format!("str has no method '{}'", method),
-            )),
-        }
-    }
-
-    // Built-in 클래스 메서드
-    fn call_builtin_method(
-        &self,
-        obj: &BuiltinObject,
-        method: &str,
-        args: Vec<Value>,
-    ) -> VmResult<Value> {
-        match (&obj.class_type, method) {
-            (BuiltinClassType::Range, "__iter__") => {
-                if !args.is_empty() {
-                    return Err(err(
-                        VmErrorKind::ArityError {
-                            expected: 0,
-                            got: args.len(),
-                        },
-                        "__iter__() takes no arguments".into(),
-                    ));
-                }
-                // Range는 자기 자신이 iterator
-                Ok(Value::BuiltinObject(Rc::new(RefCell::new(obj.clone()))))
-            }
-            _ => Err(err(
-                VmErrorKind::TypeError("method"),
-                format!("{:?} has no method '{}'", obj.class_type, method),
-            )),
-        }
-    }
+    // Phase 4: call_builtin_method 제거
+    // BuiltinObject도 이제 Object이므로 handle_call_method에서 통일 처리
 
     fn expect_int_val(&self, v: &Value) -> VmResult<i64> {
         match v {
@@ -943,8 +845,309 @@ impl Vm {
             _ => Err(err(VmErrorKind::TypeError("int"), "expected Int".into())),
         }
     }
+
+    // ========== Object 생성 헬퍼 함수들 ==========
+
+    /// String 객체 생성
+    ///
+    /// 문자열을 Object로 래핑하여 Value를 생성합니다.
+    fn make_string(&self, s: String) -> Value {
+        use super::type_def::TYPE_STR;
+        Value::Object(Rc::new(Object::new(TYPE_STR, ObjectData::String(s))))
+    }
+
+    /// UserClass (타입 객체) 생성
+    ///
+    /// 사용자 정의 클래스를 Object로 생성합니다.
+    fn make_user_class(&self, class_def: &ClassDef) -> Value {
+        use super::type_def::TYPE_USER_START;
+        let class_id = class_def.methods.get("__class_id__").copied().unwrap_or(0); // 임시: class_id를 어떻게 가져올지 결정 필요
+
+        Value::Object(Rc::new(Object::new(
+            TYPE_USER_START + class_id,
+            ObjectData::UserClass {
+                class_id,
+                methods: class_def.methods.clone(),
+            },
+        )))
+    }
+
+    /// UserInstance (인스턴스) 생성
+    fn make_user_instance(&self, class_id: u16) -> Value {
+        use super::type_def::TYPE_USER_START;
+        Value::Object(Rc::new(Object::new_with_attrs(
+            TYPE_USER_START + class_id,
+            ObjectData::UserInstance { class_id },
+        )))
+    }
+
+    /// BuiltinClass (range 등) 생성
+    fn make_builtin_class(&self, class_type: BuiltinClassType) -> Value {
+        Value::Object(Rc::new(Object::new(
+            TYPE_RANGE, // 임시로 TYPE_RANGE 사용
+            ObjectData::BuiltinClass { class_type },
+        )))
+    }
+
+    /// Range 인스턴스 생성
+    fn make_range(&self, current: i64, stop: i64, step: i64) -> Value {
+        Value::Object(Rc::new(Object::new(
+            TYPE_RANGE,
+            ObjectData::BuiltinInstance {
+                class_type: BuiltinClassType::Range,
+                data: BuiltinInstanceData::Range {
+                    current: RefCell::new(current),
+                    stop,
+                    step,
+                },
+            },
+        )))
+    }
+
+    // ========== 통일된 메서드 조회 시스템 ==========
+
+    /// 값의 타입 ID 가져오기
+    ///
+    /// 모든 값에 대해 통일된 방식으로 타입 ID를 반환합니다.
+    ///
+    /// # 반환값
+    ///
+    /// - `Int` → TYPE_INT (0)
+    /// - `Bool` → TYPE_BOOL (1)
+    /// - `None` → TYPE_NONE (3)
+    /// - `Object` → obj.type_id
+    fn get_type_id(&self, value: &Value) -> VmResult<u16> {
+        use super::type_def::*;
+        match value {
+            Value::Int(_) => Ok(TYPE_INT),
+            Value::Bool(_) => Ok(TYPE_BOOL),
+            Value::None => Ok(TYPE_NONE),
+            Value::Object(obj) => Ok(obj.type_id),
+        }
+    }
+
+    /// 통일된 메서드 조회
+    ///
+    /// Python처럼 모든 타입의 메서드를 동일한 방식으로 조회합니다.
+    ///
+    /// # 알고리즘
+    ///
+    /// 1. 값의 타입 ID 가져오기
+    /// 2. Module.types에서 TypeDef 조회
+    /// 3. TypeDef.methods에서 메서드 찾기
+    ///
+    /// # 예시
+    ///
+    /// ```
+    /// // "hello".upper() 호출 시:
+    /// // 1. type_id = TYPE_STR (2)
+    /// // 2. type_def = Module.types[2] (str 타입)
+    /// // 3. method = type_def.methods["upper"] (NativeMethod::StrUpper)
+    /// ```
+    fn lookup_method(
+        &self,
+        value: &Value,
+        method_name: &str,
+        module: &Module,
+    ) -> VmResult<super::type_def::MethodImpl> {
+        use super::type_def::*;
+
+        // 1. 값의 타입 ID 가져오기
+        let type_id = self.get_type_id(value)?;
+
+        // 2. 타입 정의 가져오기
+        if (type_id as usize) >= module.types.len() {
+            return Err(err(
+                VmErrorKind::TypeError("type"),
+                format!("invalid type id: {}", type_id),
+            ));
+        }
+        let type_def = &module.types[type_id as usize];
+
+        // 3. 메서드 테이블에서 조회
+        type_def.methods.get(method_name).cloned().ok_or_else(|| {
+            err(
+                VmErrorKind::TypeError("method"),
+                format!("'{}' object has no method '{}'", type_def.name, method_name),
+            )
+        })
+    }
+
+    /// CallMethod 명령어 핸들러
+    ///
+    /// 메서드 호출을 처리합니다. Python의 메서드 디스패치와 유사합니다.
+    ///
+    /// # 처리 과정
+    ///
+    /// 1. 인자들 수집
+    /// 2. receiver 팝
+    /// 3. 메서드 조회 (lookup_method)
+    /// 4. Native 메서드면 즉시 실행, UserDefined면 함수 호출
+    ///
+    /// # 주의
+    ///
+    /// UserObject와 BuiltinObject는 아직 타입 테이블에 없으므로 별도 처리됩니다.
+    fn handle_call_method<IO: crate::runtime_io::RuntimeIo>(
+        &mut self,
+        method_sym: u16,
+        argc: usize,
+        module: &Module,
+        io: &mut IO,
+    ) -> VmResult<()> {
+        use super::type_def::*;
+
+        // 1. 인자 수집
+        let mut args = Vec::with_capacity(argc);
+        for _ in 0..argc {
+            args.push(self.pop()?);
+        }
+        args.reverse();
+
+        // 2. receiver 팝
+        let receiver = self.pop()?;
+
+        // 3. 메서드 이름 가져오기
+        let method_name = &module.symbols[method_sym as usize];
+
+        // Phase 4: UserInstance 메서드는 별도 처리 (타입 테이블이 아닌 클래스 테이블 사용)
+        if let Value::Object(obj) = &receiver {
+            if let ObjectData::UserInstance { class_id } = &obj.data {
+                let class_def = &module.classes[*class_id as usize];
+
+                // 메서드 테이블에서 찾기
+                let func_id = class_def.methods.get(method_name).ok_or_else(|| {
+                    err(
+                        VmErrorKind::TypeError("method"),
+                        format!("'{}' has no method '{}'", class_def.name, method_name),
+                    )
+                })?;
+
+                // self를 첫 번째 인자로 추가
+                self.push(receiver.clone())?;
+                for arg in args {
+                    self.push(arg)?;
+                }
+
+                // 함수 호출
+                self.enter_func(module, *func_id as usize, argc + 1)?;
+                return Ok(());
+            }
+        }
+
+        // 4. 메서드 조회 (통일된 방식!)
+        let method_impl = self.lookup_method(&receiver, method_name, module)?;
+
+        // 5. 메서드 호출
+        match method_impl {
+            MethodImpl::Native { func, arity } => {
+                // Arity 체크
+                if !arity.check(args.len()) {
+                    return Err(err(
+                        VmErrorKind::ArityError {
+                            expected: match arity {
+                                Arity::Exact(n) => n,
+                                _ => 0,
+                            },
+                            got: args.len(),
+                        },
+                        format!(
+                            "{}.{}() takes {} argument(s) but {} given",
+                            self.get_type_name(&receiver, module)?,
+                            method_name,
+                            arity.description(),
+                            args.len()
+                        ),
+                    ));
+                }
+
+                // Native 메서드 실행
+                let result = self.call_native_method_dispatch(func, &receiver, args, module, io)?;
+                self.push(result)?;
+            }
+            MethodImpl::UserDefined { func_id } => {
+                // self + args를 스택에 푸시
+                self.push(receiver)?;
+                for arg in args {
+                    self.push(arg)?;
+                }
+
+                // 함수 호출
+                self.enter_func(module, func_id as usize, argc + 1)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 타입 이름 가져오기 (에러 메시지용)
+    fn get_type_name(&self, value: &Value, module: &Module) -> VmResult<String> {
+        let type_id = self.get_type_id(value)?;
+        Ok(module.types[type_id as usize].name.clone())
+    }
+
+    /// Native 메서드 디스패처
+    ///
+    /// NativeMethod ID에 따라 적절한 Rust 함수를 실행합니다.
+    ///
+    /// # 구현된 메서드
+    ///
+    /// - **String**: upper, lower, strip, replace, startswith, endswith, find, count
+    /// - **Range**: __iter__
+    ///
+    /// # 미구현 메서드
+    ///
+    /// - split, join (리스트 타입 필요)
+    fn call_native_method_dispatch(
+        &self,
+        method: super::type_def::NativeMethod,
+        receiver: &Value,
+        args: Vec<Value>,
+        _module: &Module,
+        _io: &mut dyn crate::runtime_io::RuntimeIo,
+    ) -> VmResult<Value> {
+        // native_methods 모듈의 call_native_method 함수를 호출
+        super::native_methods::call_native_method(method, receiver, args)
+            .map_err(|e| err(VmErrorKind::TypeError("native method"), e.message))
+    }
+
+    /// Value에서 String 데이터 추출
+    ///
+    /// Object의 ObjectData::String에서 문자열 참조를 가져옵니다.
+    fn expect_string<'a>(&self, v: &'a Value) -> VmResult<&'a str> {
+        match v {
+            Value::Object(obj) => {
+                use super::value::ObjectData;
+                match &obj.data {
+                    ObjectData::String(s) => Ok(s),
+                    _ => Err(err(
+                        VmErrorKind::TypeError("str"),
+                        "expected string object".into(),
+                    )),
+                }
+            }
+            _ => Err(err(VmErrorKind::TypeError("str"), "expected String".into())),
+        }
+    }
+
+    /// String 객체인지 확인
+    ///
+    /// Value가 String Object (type_id == TYPE_STR)인지 체크합니다.
+    fn is_string_object(&self, v: &Value) -> bool {
+        match v {
+            Value::Object(obj) => {
+                use super::type_def::TYPE_STR;
+                obj.type_id == TYPE_STR
+            }
+            _ => false,
+        }
+    }
 }
 
+// ========== 타입 변환 유틸리티 ==========
+
+/// Value를 정수로 변환
+///
+/// Python의 `int()` 변환 규칙을 따릅니다.
 fn to_int(v: &Value) -> i64 {
     match v {
         Value::Int(i) => *i,
@@ -955,49 +1158,101 @@ fn to_int(v: &Value) -> i64 {
                 0
             }
         }
-        Value::String(s) => s.parse::<i64>().unwrap_or(0),
+        // String Object → 파싱, 다른 객체는 0
+        Value::Object(obj) => {
+            use super::value::ObjectData;
+            match &obj.data {
+                ObjectData::String(s) => s.parse::<i64>().unwrap_or(0),
+                _ => 0,
+            }
+        }
         Value::None => 0,
-        _ => 0, // 클래스 객체들은 0으로
     }
 }
+
+/// Value를 불리언으로 변환
+///
+/// Python의 truthy/falsy 규칙을 따릅니다.
+///
+/// # 규칙
+///
+/// - `False`, `0`, `None`, 빈 문자열 → false
+/// - 나머지 → true
 fn to_bool(v: &Value) -> bool {
     match v {
         Value::Bool(b) => *b,
         Value::Int(i) => *i != 0,
-        Value::String(s) => !s.is_empty(),
+        // String Object → 비어있으면 false, 다른 객체는 true
+        Value::Object(obj) => {
+            use super::value::ObjectData;
+            match &obj.data {
+                ObjectData::String(s) => !s.is_empty(),
+                _ => true,
+            }
+        }
         Value::None => false,
-        _ => true, // 객체들은 true
     }
 }
+
+/// Value 동등성 비교
+///
+/// Python의 `==` 연산자 의미론을 구현합니다.
+///
+/// # 규칙
+///
+/// - 같은 타입: 값 비교
+/// - String Object: 내용 비교 (포인터가 다르더라도)
+/// - 다른 객체: 포인터 비교 (identity)
 fn eq_vals(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Bool(x), Value::Bool(y)) => x == y,
-        (Value::String(x), Value::String(y)) => x == y,
         (Value::None, Value::None) => true,
-        (Value::UserClass(x), Value::UserClass(y)) => Rc::ptr_eq(x, y),
-        (Value::UserObject(x), Value::UserObject(y)) => Rc::ptr_eq(x, y),
-        (Value::BuiltinClass(x), Value::BuiltinClass(y)) => x == y,
-        (Value::BuiltinObject(x), Value::BuiltinObject(y)) => Rc::ptr_eq(x, y),
+        // Phase 4: 모든 객체가 Object로 통합
+        (Value::Object(x), Value::Object(y)) => {
+            // 포인터가 같으면 동일 객체
+            if Rc::ptr_eq(x, y) {
+                return true;
+            }
+            // String은 값 비교
+            use super::value::ObjectData;
+            match (&x.data, &y.data) {
+                (ObjectData::String(s1), ObjectData::String(s2)) => s1 == s2,
+                // 다른 객체들은 포인터 비교만 (identity)
+                _ => false,
+            }
+        }
         _ => false,
     }
 }
+
+/// Value를 출력 가능한 문자열로 변환
+///
+/// Python의 `print()` 함수가 사용하는 변환입니다.
 fn display_value(v: &Value) -> String {
+    use super::value::ObjectData;
+
     match v {
         Value::Int(i) => i.to_string(),
         Value::Bool(b) => b.to_string(),
-        Value::String(s) => s.clone(),
         Value::None => "None".into(),
-        Value::UserClass(c) => format!("<class '{}'>", c.name),
-        Value::UserObject(o) => {
-            let obj = o.borrow();
-            format!("<{} object>", obj.class_id)
-        }
-        Value::BuiltinClass(bt) => format!("<class '{:?}'>", bt),
-        Value::BuiltinObject(o) => {
-            let obj = o.borrow();
-            format!("<{:?} object>", obj.class_type)
-        }
+        // Phase 4: 모든 객체가 Object로 통합
+        Value::Object(obj) => match &obj.data {
+            ObjectData::String(s) => s.clone(),
+            ObjectData::UserClass { class_id, .. } => {
+                // class_id로 이름 찾기는 어려우므로 간단하게 표시
+                format!("<class {}>", class_id)
+            }
+            ObjectData::UserInstance { class_id } => {
+                format!("<instance of class {}>", class_id)
+            }
+            ObjectData::BuiltinClass { class_type } => {
+                format!("<class '{}'>", class_type.name())
+            }
+            ObjectData::BuiltinInstance { class_type, .. } => {
+                format!("<{} object>", class_type.name())
+            }
+        },
     }
 }
 
@@ -1015,14 +1270,8 @@ mod tests {
     use super::*;
 
     fn make_test_module() -> Module {
-        Module {
-            consts: vec![],
-            string_pool: vec![],
-            globals: vec![],
-            symbols: vec![],
-            functions: vec![],
-            classes: vec![],
-        }
+        // Module::new()를 사용하면 타입 테이블이 자동으로 초기화됨
+        Module::new()
     }
 
     // ========== 스택 연산 테스트 ==========

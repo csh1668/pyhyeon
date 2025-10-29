@@ -70,6 +70,11 @@ pub enum Stmt {
         condition: ExprS,
         body: Vec<StmtS>,
     },
+    For {
+        var: String,
+        iterable: ExprS,
+        body: Vec<StmtS>,
+    },
     Def {
         name: String,
         params: Vec<String>,
