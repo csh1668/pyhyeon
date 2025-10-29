@@ -125,6 +125,8 @@ mod wasm_api {
         vm: vm::Vm,
         module: vm::bytecode::Module,
         io: runtime_io::BufferIo,
+        execution_timer: Option<instant::Instant>,
+        accumulated_time: std::time::Duration,
     }
 
     thread_local! {
@@ -145,6 +147,7 @@ mod wasm_api {
     pub struct VmStateInfo {
         pub state: String, // "running", "waiting_for_input", "finished", "error"
         pub output: String,
+        pub execution_time_ms: Option<f64>,
     }
 
     fn byte_to_lc(src: &str, byte_idx: usize) -> (u32, u32) {
@@ -275,6 +278,7 @@ mod wasm_api {
                 return serde_wasm_bindgen::to_value(&VmStateInfo {
                     state: "error".to_string(),
                     output,
+                    execution_time_ms: None,
                 })
                 .unwrap();
             }
@@ -285,6 +289,7 @@ mod wasm_api {
             return serde_wasm_bindgen::to_value(&VmStateInfo {
                 state: "error".to_string(),
                 output: diag.format("<mem>", &src, "Semantic Analyzing Failed", 4),
+                execution_time_ms: None,
             })
             .unwrap();
         }
@@ -295,7 +300,13 @@ mod wasm_api {
         let io = super::runtime_io::BufferIo::new();
 
         // Start execution
-        let session = VmSession { vm, module, io };
+        let session = VmSession {
+            vm,
+            module,
+            io,
+            execution_timer: Some(instant::Instant::now()),
+            accumulated_time: std::time::Duration::from_secs(0),
+        };
         ACTIVE_SESSION.with(|s| {
             *s.borrow_mut() = Some(session);
         });
@@ -310,22 +321,61 @@ mod wasm_api {
         ACTIVE_SESSION.with(|s| {
             let mut session_opt = s.borrow_mut();
             if let Some(ref mut session) = *session_opt {
+                // Start timer if not running
+                if session.execution_timer.is_none() {
+                    session.execution_timer = Some(instant::Instant::now());
+                }
+                
+                // Execute
                 match session.vm.run_with_io(&mut session.module, &mut session.io) {
-                    Ok(_) => serde_wasm_bindgen::to_value(&VmStateInfo {
-                        state: vm_state_to_string(session.vm.get_state()).to_string(),
-                        output: session.io.drain_output(),
-                    })
-                    .unwrap(),
-                    Err(err) => serde_wasm_bindgen::to_value(&VmStateInfo {
-                        state: "error".to_string(),
-                        output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
-                    })
-                    .unwrap(),
+                    Ok(_) => {
+                        let state = session.vm.get_state();
+                        
+                        // Stop timer and accumulate if waiting for input or finished
+                        let mut execution_time_ms = None;
+                        let is_waiting = state == vm::machine::VmState::WaitingForInput;
+                        let is_finished = state == vm::machine::VmState::Finished;
+                        let is_error = state == vm::machine::VmState::Error;
+                        
+                        if is_waiting || is_finished || is_error {
+                            if let Some(timer) = session.execution_timer.take() {
+                                session.accumulated_time += timer.elapsed();
+                            }
+                            
+                            // Set execution time for finished state
+                            if is_finished {
+                                execution_time_ms = Some(session.accumulated_time.as_secs_f64() * 1000.0);
+                            }
+                        }
+                        
+                        let state_str = vm_state_to_string(state);
+                        
+                        serde_wasm_bindgen::to_value(&VmStateInfo {
+                            state: state_str.to_string(),
+                            output: session.io.drain_output(),
+                            execution_time_ms,
+                        })
+                        .unwrap()
+                    }
+                    Err(err) => {
+                        // Stop timer on error
+                        if let Some(timer) = session.execution_timer.take() {
+                            session.accumulated_time += timer.elapsed();
+                        }
+                        
+                        serde_wasm_bindgen::to_value(&VmStateInfo {
+                            state: "error".to_string(),
+                            output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
+                            execution_time_ms: None,
+                        })
+                        .unwrap()
+                    }
                 }
             } else {
                 serde_wasm_bindgen::to_value(&VmStateInfo {
                     state: "error".to_string(),
                     output: "No active program".to_string(),
+                    execution_time_ms: None,
                 })
                 .unwrap()
             }
@@ -343,23 +393,59 @@ mod wasm_api {
                 // Resume execution
                 session.vm.resume();
 
+                // Restart timer before execution
+                session.execution_timer = Some(instant::Instant::now());
+
                 // Continue execution
                 match session.vm.run_with_io(&mut session.module, &mut session.io) {
-                    Ok(_) => serde_wasm_bindgen::to_value(&VmStateInfo {
-                        state: vm_state_to_string(session.vm.get_state()).to_string(),
-                        output: session.io.drain_output(),
-                    })
-                    .unwrap(),
-                    Err(err) => serde_wasm_bindgen::to_value(&VmStateInfo {
-                        state: "error".to_string(),
-                        output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
-                    })
-                    .unwrap(),
+                    Ok(_) => {
+                        let state = session.vm.get_state();
+                        
+                        // Stop timer and accumulate if waiting for input or finished
+                        let mut execution_time_ms = None;
+                        let is_waiting = state == vm::machine::VmState::WaitingForInput;
+                        let is_finished = state == vm::machine::VmState::Finished;
+                        let is_error = state == vm::machine::VmState::Error;
+                        
+                        if is_waiting || is_finished || is_error {
+                            if let Some(timer) = session.execution_timer.take() {
+                                session.accumulated_time += timer.elapsed();
+                            }
+                            
+                            // Set execution time for finished state
+                            if is_finished {
+                                execution_time_ms = Some(session.accumulated_time.as_secs_f64() * 1000.0);
+                            }
+                        }
+                        
+                        let state_str = vm_state_to_string(state);
+                        
+                        serde_wasm_bindgen::to_value(&VmStateInfo {
+                            state: state_str.to_string(),
+                            output: session.io.drain_output(),
+                            execution_time_ms,
+                        })
+                        .unwrap()
+                    }
+                    Err(err) => {
+                        // Stop timer on error
+                        if let Some(timer) = session.execution_timer.take() {
+                            session.accumulated_time += timer.elapsed();
+                        }
+                        
+                        serde_wasm_bindgen::to_value(&VmStateInfo {
+                            state: "error".to_string(),
+                            output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
+                            execution_time_ms: None,
+                        })
+                        .unwrap()
+                    }
                 }
             } else {
                 serde_wasm_bindgen::to_value(&VmStateInfo {
                     state: "error".to_string(),
                     output: "No active program".to_string(),
+                    execution_time_ms: None,
                 })
                 .unwrap()
             }
@@ -372,15 +458,24 @@ mod wasm_api {
         ACTIVE_SESSION.with(|s| {
             let mut session_opt = s.borrow_mut();
             if let Some(ref mut session) = *session_opt {
+                let state = session.vm.get_state();
+                let execution_time_ms = if state == vm::machine::VmState::Finished {
+                    Some(session.accumulated_time.as_secs_f64() * 1000.0)
+                } else {
+                    None
+                };
+                
                 serde_wasm_bindgen::to_value(&VmStateInfo {
-                    state: vm_state_to_string(session.vm.get_state()).to_string(),
+                    state: vm_state_to_string(state).to_string(),
                     output: session.io.drain_output(),
+                    execution_time_ms,
                 })
                 .unwrap()
             } else {
                 serde_wasm_bindgen::to_value(&VmStateInfo {
                     state: "error".to_string(),
                     output: "No active program".to_string(),
+                    execution_time_ms: None,
                 })
                 .unwrap()
             }

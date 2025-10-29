@@ -22,6 +22,12 @@ import { AnsiUp } from 'ansi_up'
 
 type VmState = 'idle' | 'running' | 'waiting_for_input' | 'finished' | 'error'
 
+interface VmStateInfo {
+  state: string
+  output: string
+  execution_time_ms?: number
+}
+
 interface Example {
   id: string
   name: string
@@ -43,6 +49,7 @@ function App() {
   const outputEndRef = useRef<HTMLDivElement>(null)
   const [examples, setExamples] = useState<Example[]>([])
   const [selectedExample, setSelectedExample] = useState<string>('')
+  const [executionTime, setExecutionTime] = useState<number | null>(null)
   
   // ANSI to HTML converter
   const ansiUp = useMemo(() => new AnsiUp(), [])
@@ -95,6 +102,7 @@ function App() {
         setSelectedExample(exampleId)
         setOutput('')
         setVmState('idle')
+        setExecutionTime(null)
       }
     } catch (error) {
       console.error('Failed to load example:', error)
@@ -423,13 +431,16 @@ function App() {
         const code = instance!.getValue()
         setOutput('')
         setVmState('running')
+        setExecutionTime(null)
         
         try {
-          const result = start_program(code)
-          const { state, output: newOutput } = result as { state: string; output: string }
+          const result = start_program(code) as VmStateInfo
           
-          setOutput(newOutput)
-          setVmState(state as VmState)
+          setOutput(result.output)
+          setVmState(result.state as VmState)
+          if (result.execution_time_ms !== undefined) {
+            setExecutionTime(result.execution_time_ms)
+          }
         } catch (e) {
           setOutput(`${e}`)
           setVmState('error')
@@ -486,13 +497,16 @@ function App() {
     const code = editor.getValue()
     setOutput('')
     setVmState('running')
+    setExecutionTime(null)
     
     try {
-      const result = start_program(code)
-      const { state, output: newOutput } = result as { state: string; output: string }
+      const result = start_program(code) as VmStateInfo
       
-      setOutput(newOutput)
-      setVmState(state as VmState)
+      setOutput(result.output)
+      setVmState(result.state as VmState)
+      if (result.execution_time_ms !== undefined) {
+        setExecutionTime(result.execution_time_ms)
+      }
     } catch (e) {
       setOutput(`${e}`)
       setVmState('error')
@@ -516,11 +530,13 @@ function App() {
     }
 
     try {
-      const result = provide_input(inputValue)
-      const { state, output: newOutput } = result as { state: string; output: string }
+      const result = provide_input(inputValue) as VmStateInfo
       
-      setOutput(prev => prev + newOutput)
-      setVmState(state as VmState)
+      setOutput(prev => prev + result.output)
+      setVmState(result.state as VmState)
+      if (result.execution_time_ms !== undefined) {
+        setExecutionTime(result.execution_time_ms)
+      }
       setInputValue('')
     } catch (e) {
       setOutput(prev => prev + `\nError: ${e}`)
@@ -685,6 +701,13 @@ function App() {
             <div className="flex-1 p-4 flex flex-col">
               <div className="flex-1 bg-black/20 p-4 rounded-lg border border-gray-800/50 overflow-auto backdrop-blur-sm">
                 <pre className="text-sm text-gray-100 font-mono whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: outputHtml || 'Run your code to see output here...' }} />
+                {executionTime !== null && vmState === 'finished' && (
+                  <div className="mt-3 pt-3 border-t border-gray-700/50">
+                    <span className="text-xs text-gray-400">
+                      Execution time: {executionTime.toFixed(3)}ms
+                    </span>
+                  </div>
+                )}
                 <div ref={outputEndRef} />
               </div>
               {vmState === 'waiting_for_input' && (
