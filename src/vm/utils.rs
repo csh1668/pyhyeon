@@ -24,6 +24,27 @@ pub fn display_value(v: &Value) -> String {
         Value::None => "None".to_string(),
         Value::Object(obj) => match &obj.data {
             ObjectData::String(s) => s.clone(),
+            ObjectData::List { items } => {
+                let items_ref = items.borrow();
+                let contents: Vec<String> = items_ref.iter().map(display_value).collect();
+                format!("[{}]", contents.join(", "))
+            }
+            ObjectData::Dict { map } => {
+                use super::value::DictKey;
+                let map_ref = map.borrow();
+                let contents: Vec<String> = map_ref
+                    .iter()
+                    .map(|(k, v)| {
+                        let key_str = match k {
+                            DictKey::Int(i) => i.to_string(),
+                            DictKey::String(s) => format!("\"{}\"", s),
+                            DictKey::Bool(b) => if *b { "True" } else { "False" }.to_string(),
+                        };
+                        format!("{}: {}", key_str, display_value(v))
+                    })
+                    .collect();
+                format!("{{{}}}", contents.join(", "))
+            }
             ObjectData::UserClass { class_id, .. } => format!("<class user_{}>", class_id),
             ObjectData::UserInstance { class_id } => {
                 format!("<instance of user_{}>", class_id)
@@ -56,6 +77,8 @@ pub fn type_name(v: &Value) -> &'static str {
         Value::None => "NoneType",
         Value::Object(obj) => match &obj.data {
             ObjectData::String(_) => "str",
+            ObjectData::List { .. } => "list",
+            ObjectData::Dict { .. } => "dict",
             ObjectData::UserClass { .. } => "type",
             ObjectData::UserInstance { .. } => "instance",
             ObjectData::BuiltinClass { .. } => "type",

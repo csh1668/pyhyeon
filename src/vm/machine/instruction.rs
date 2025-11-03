@@ -1,7 +1,7 @@
 use crate::vm::bytecode::{Instruction as I, Module, Value};
 use crate::runtime_io::RuntimeIo;
 use super::{Vm, VmResult, VmErrorKind, err, eq_vals};
-use crate::vm::type_def::BuiltinClassType;
+use crate::vm::type_def::{BuiltinClassType, MethodImpl};
 use crate::vm::value::ObjectData;
 
 /// 명령어 실행 결과
@@ -39,21 +39,21 @@ impl Vm {
             I::StoreGlobal(ix) => self.handle_store_global(*ix, module),
 
             // ===== 산술 연산 =====
-            I::Add => self.handle_add(),
-            I::Sub => self.handle_sub(),
-            I::Mul => self.handle_mul(),
-            I::Div => self.handle_div(),
-            I::Mod => self.handle_mod(),
-            I::Neg => self.handle_neg(),
-            I::Pos => self.handle_pos(),
+            I::Add => self.handle_add(module, io),
+            I::Sub => self.handle_sub(module, io),
+            I::Mul => self.handle_mul(module, io),
+            I::Div => self.handle_div(module, io),
+            I::Mod => self.handle_mod(module, io),
+            I::Neg => self.handle_neg(module, io),
+            I::Pos => self.handle_pos(module, io),
 
             // ===== 비교/논리 연산 =====
-            I::Eq => self.handle_eq(),
-            I::Ne => self.handle_ne(),
-            I::Lt => self.handle_lt(),
-            I::Le => self.handle_le(),
-            I::Gt => self.handle_gt(),
-            I::Ge => self.handle_ge(),
+            I::Eq => self.handle_eq(module, io),
+            I::Ne => self.handle_ne(module, io),
+            I::Lt => self.handle_lt(module, io),
+            I::Le => self.handle_le(module, io),
+            I::Gt => self.handle_gt(module, io),
+            I::Ge => self.handle_ge(module, io),
             I::Not => self.handle_not(),
 
             // ===== 제어 흐름 =====
@@ -62,13 +62,19 @@ impl Vm {
             I::JumpIfTrue(off) => self.handle_jump_if_true(*off),
             I::Call(fid, argc) => self.handle_call(*fid, *argc, module),
             I::CallBuiltin(bid, argc) => self.handle_call_builtin(*bid, *argc, module, io),
-            I::CallValue(argc) => self.handle_call_value(*argc, module),
+            I::CallValue(argc) => self.handle_call_value(*argc, module, io),
             I::CallMethod(method_sym, argc) => self.handle_call_method_dispatch(*method_sym, *argc, module, io),
             I::Return => self.handle_return(),
 
             // ===== 속성 접근 =====
             I::LoadAttr(attr_sym) => self.handle_load_attr(*attr_sym, module),
             I::StoreAttr(attr_sym) => self.handle_store_attr(*attr_sym, module),
+
+            // ===== 컬렉션 =====
+            I::BuildList(count) => self.handle_build_list(*count),
+            I::BuildDict(count) => self.handle_build_dict(*count),
+            I::LoadIndex => self.handle_load_index(),
+            I::StoreIndex => self.handle_store_index(),
         }
     }
 
@@ -149,198 +155,677 @@ impl Vm {
 
     // ==================== 산술 연산 핸들러 ====================
 
-    fn handle_add(&mut self) -> VmResult<ExecutionFlow> {
+    fn handle_add<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        let result = match (&a, &b) {
-            // Int + Int
-            (Value::Int(x), Value::Int(y)) => Value::Int(x.wrapping_add(*y)),
-            // String + String (Object 기반)
-            _ if self.is_string_object(&a) && self.is_string_object(&b) => {
-                let s1 = self.expect_string(&a)?;
-                let s2 = self.expect_string(&b)?;
-                self.make_string(s1.to_string() + s2)
+        
+        // Fast path 1: Int + Int
+        if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
+            self.push(Value::Int(x.wrapping_add(*y)))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Fast path 2: String + String
+        if self.is_string_object(&a) && self.is_string_object(&b) {
+            let s1 = self.expect_string(&a)?;
+            let s2 = self.expect_string(&b)?;
+            self.push(self.make_string(s1.to_string() + s2))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Slow path: __add__ 메서드 조회 및 호출
+        match self.lookup_method(&a, "__add__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![b.clone()], module, io)? {
+                    Some(result) => {
+                        // Native 메서드: 즉시 결과 사용
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        // a를 다시 푸시하고, b를 인자로 사용
+                        self.push(a)?;
+                        self.push(b)?;
+                        
+                        // __add__ 심볼 찾기
+                        let method_sym = module.symbols.iter().position(|s| s == "__add__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__add__ symbol not found".into()
+                            ))? as u16;
+                        
+                        // CallMethod 핸들러 호출
+                        self.handle_call_method(method_sym, 1, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
             }
-            _ => {
-                return Err(err(
-                    VmErrorKind::TypeError("add"),
-                    "unsupported types for addition".into(),
-                ));
-            }
-        };
-        self.push(result)?;
-        Ok(ExecutionFlow::Continue)
+            Err(_) => Err(err(
+                VmErrorKind::TypeError("add"),
+                format!("unsupported operand types for +: '{}' and '{}'", 
+                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                ),
+            )),
+        }
     }
 
-    fn handle_sub(&mut self) -> VmResult<ExecutionFlow> {
-        let (b, a) = (self.pop_int()?, self.pop_int()?);
-        self.push(Value::Int(a.wrapping_sub(b)))?;
-        Ok(ExecutionFlow::Continue)
+    fn handle_sub<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
+        let (b, a) = (self.pop()?, self.pop()?);
+        
+        // Fast path: Int - Int
+        if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
+            self.push(Value::Int(x.wrapping_sub(*y)))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Slow path: __sub__ 메서드 조회
+        match self.lookup_method(&a, "__sub__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![b.clone()], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        self.push(b)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__sub__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__sub__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 1, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
+            }
+            Err(_) => Err(err(
+                VmErrorKind::TypeError("sub"),
+                format!("unsupported operand types for -: '{}' and '{}'",
+                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                ),
+            )),
+        }
     }
 
-    fn handle_mul(&mut self) -> VmResult<ExecutionFlow> {
+    fn handle_mul<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        let result = match (&a, &b) {
-            // Int * Int
-            (Value::Int(x), Value::Int(y)) => Value::Int(x.wrapping_mul(*y)),
-            // String * Int (반복)
-            _ if self.is_string_object(&a) && matches!(b, Value::Int(_)) => {
+        
+        // Fast path 1: Int * Int
+        if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
+            self.push(Value::Int(x.wrapping_mul(*y)))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Fast path 2: String * Int
+        if self.is_string_object(&a)
+            && let Value::Int(n) = b {
                 let s = self.expect_string(&a)?;
-                if let Value::Int(n) = b {
-                    if n < 0 {
-                        self.make_string(String::new())
-                    } else {
-                        self.make_string(s.repeat(n as usize))
-                    }
+                let result = if n < 0 {
+                    String::new()
                 } else {
-                    unreachable!()
-                }
+                    s.repeat(n as usize)
+                };
+                self.push(self.make_string(result))?;
+                return Ok(ExecutionFlow::Continue);
             }
-            // Int * String (반복, 순서 바꿈)
-            _ if matches!(a, Value::Int(_)) && self.is_string_object(&b) => {
+        
+        // Fast path 3: Int * String
+        if let Value::Int(n) = a
+            && self.is_string_object(&b) {
                 let s = self.expect_string(&b)?;
-                if let Value::Int(n) = a {
-                    if n < 0 {
-                        self.make_string(String::new())
-                    } else {
-                        self.make_string(s.repeat(n as usize))
-                    }
+                let result = if n < 0 {
+                    String::new()
                 } else {
-                    unreachable!()
+                    s.repeat(n as usize)
+                };
+                self.push(self.make_string(result))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+        
+        // Slow path: __mul__ 메서드 조회
+        match self.lookup_method(&a, "__mul__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![b.clone()], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        self.push(b)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__mul__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__mul__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 1, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
                 }
             }
-            _ => {
-                return Err(err(
-                    VmErrorKind::TypeError("multiply"),
-                    "unsupported types for multiplication".into(),
-                ));
+            Err(_) => Err(err(
+                VmErrorKind::TypeError("mul"),
+                format!("unsupported operand types for *: '{}' and '{}'",
+                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                ),
+            )),
+        }
+    }
+
+    fn handle_div<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
+        let (b, a) = (self.pop()?, self.pop()?);
+        
+        // Fast path: Int // Int
+        if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
+            if *y == 0 {
+                return Err(err(VmErrorKind::ZeroDivision, "integer division by zero".into()));
             }
-        };
-        self.push(result)?;
-        Ok(ExecutionFlow::Continue)
-    }
-
-    fn handle_div(&mut self) -> VmResult<ExecutionFlow> {
-        let (b, a) = (self.pop_int()?, self.pop_int()?);
-        if b == 0 {
-            return Err(err(VmErrorKind::ZeroDivision, "division by zero".into()));
+            self.push(Value::Int(x / y))?;
+            return Ok(ExecutionFlow::Continue);
         }
-        self.push(Value::Int(a / b))?;
-        Ok(ExecutionFlow::Continue)
-    }
-
-    fn handle_mod(&mut self) -> VmResult<ExecutionFlow> {
-        let (b, a) = (self.pop_int()?, self.pop_int()?);
-        if b == 0 {
-            return Err(err(VmErrorKind::ZeroDivision, "modulo by zero".into()));
+        
+        // Slow path: __floordiv__ 메서드 조회
+        match self.lookup_method(&a, "__floordiv__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![b.clone()], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        self.push(b)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__floordiv__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__floordiv__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 1, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
+            }
+            Err(_) => Err(err(
+                VmErrorKind::TypeError("floordiv"),
+                format!("unsupported operand types for //: '{}' and '{}'",
+                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                ),
+            )),
         }
-        self.push(Value::Int(a % b))?;
-        Ok(ExecutionFlow::Continue)
     }
 
-    fn handle_neg(&mut self) -> VmResult<ExecutionFlow> {
-        let a = self.pop_int()?;
-        self.push(Value::Int(-a))?;
-        Ok(ExecutionFlow::Continue)
+    fn handle_mod<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
+        let (b, a) = (self.pop()?, self.pop()?);
+        
+        // Fast path: Int % Int
+        if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
+            if *y == 0 {
+                return Err(err(VmErrorKind::ZeroDivision, "integer modulo by zero".into()));
+            }
+            self.push(Value::Int(x % y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Slow path: __mod__ 메서드 조회
+        match self.lookup_method(&a, "__mod__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![b.clone()], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        self.push(b)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__mod__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__mod__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 1, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
+            }
+            Err(_) => Err(err(
+                VmErrorKind::TypeError("mod"),
+                format!("unsupported operand types for %: '{}' and '{}'",
+                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                ),
+            )),
+        }
     }
 
-    fn handle_pos(&mut self) -> VmResult<ExecutionFlow> {
-        let a = self.pop_int()?;
-        self.push(Value::Int(a))?;
-        Ok(ExecutionFlow::Continue)
+    fn handle_neg<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
+        let a = self.pop()?;
+        
+        // Fast path: -Int
+        if let Value::Int(x) = a {
+            self.push(Value::Int(-x))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Slow path: __neg__ 메서드 조회
+        match self.lookup_method(&a, "__neg__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__neg__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__neg__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 0, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
+            }
+            Err(_) => Err(err(
+                VmErrorKind::TypeError("neg"),
+                format!("bad operand type for unary -: '{}'",
+                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string())
+                ),
+            )),
+        }
+    }
+
+    fn handle_pos<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
+        let a = self.pop()?;
+        
+        // Fast path: +Int
+        if let Value::Int(x) = a {
+            self.push(Value::Int(x))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Slow path: __pos__ 메서드 조회
+        match self.lookup_method(&a, "__pos__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__pos__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__pos__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 0, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
+            }
+            Err(_) => Err(err(
+                VmErrorKind::TypeError("pos"),
+                format!("bad operand type for unary +: '{}'",
+                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string())
+                ),
+            )),
+        }
     }
 
     // ==================== 비교/논리 연산 핸들러 ====================
 
-    fn handle_eq(&mut self) -> VmResult<ExecutionFlow> {
+    fn handle_eq<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        self.push(Value::Bool(eq_vals(&a, &b)))?;
-        Ok(ExecutionFlow::Continue)
+        
+        // Fast path: 기본 타입들은 eq_vals 사용
+        if matches!((&a, &b), (Value::Int(_), Value::Int(_)) | (Value::Bool(_), Value::Bool(_)) | (Value::None, Value::None)) {
+            self.push(Value::Bool(eq_vals(&a, &b)))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // String 비교
+        if self.is_string_object(&a) && self.is_string_object(&b) {
+            let s1 = self.expect_string(&a)?;
+            let s2 = self.expect_string(&b)?;
+            self.push(Value::Bool(s1 == s2))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Slow path: __eq__ 메서드 조회
+        match self.lookup_method(&a, "__eq__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![b.clone()], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        self.push(b)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__eq__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__eq__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 1, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
+            }
+            Err(_) => {
+                // __eq__가 없으면 기본 동작 (객체 identity 비교)
+                self.push(Value::Bool(eq_vals(&a, &b)))?;
+                Ok(ExecutionFlow::Continue)
+            }
+        }
     }
 
-    fn handle_ne(&mut self) -> VmResult<ExecutionFlow> {
+    fn handle_ne<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        self.push(Value::Bool(!eq_vals(&a, &b)))?;
-        Ok(ExecutionFlow::Continue)
+        
+        // Fast path: 기본 타입들은 eq_vals 사용
+        if matches!((&a, &b), (Value::Int(_), Value::Int(_)) | (Value::Bool(_), Value::Bool(_)) | (Value::None, Value::None)) {
+            self.push(Value::Bool(!eq_vals(&a, &b)))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // String 비교
+        if self.is_string_object(&a) && self.is_string_object(&b) {
+            let s1 = self.expect_string(&a)?;
+            let s2 = self.expect_string(&b)?;
+            self.push(Value::Bool(s1 != s2))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Slow path: __ne__ 메서드 조회
+        match self.lookup_method(&a, "__ne__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![b.clone()], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        self.push(b)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__ne__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__ne__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 1, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
+            }
+            Err(_) => {
+                // __ne__가 없으면 기본 동작 (객체 identity 비교)
+                self.push(Value::Bool(!eq_vals(&a, &b)))?;
+                Ok(ExecutionFlow::Continue)
+            }
+        }
     }
 
-    fn handle_lt(&mut self) -> VmResult<ExecutionFlow> {
+    fn handle_lt<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        let result = match (&a, &b) {
-            (Value::Int(x), Value::Int(y)) => *x < *y,
-            _ if self.is_string_object(&a) && self.is_string_object(&b) => {
-                let s1 = self.expect_string(&a)?;
-                let s2 = self.expect_string(&b)?;
-                s1 < s2
+        
+        // Fast path: Int < Int
+        if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
+            self.push(Value::Bool(*x < *y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Fast path: String < String
+        if self.is_string_object(&a) && self.is_string_object(&b) {
+            let s1 = self.expect_string(&a)?;
+            let s2 = self.expect_string(&b)?;
+            self.push(Value::Bool(s1 < s2))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Slow path: __lt__ 메서드 조회
+        match self.lookup_method(&a, "__lt__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![b.clone()], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        self.push(b)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__lt__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__lt__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 1, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
             }
-            _ => {
-                return Err(err(
-                    VmErrorKind::TypeError("comparison"),
-                    "unsupported types for '<'".into(),
-                ));
-            }
-        };
-        self.push(Value::Bool(result))?;
-        Ok(ExecutionFlow::Continue)
+            Err(_) => Err(err(
+                VmErrorKind::TypeError("comparison"),
+                format!("'<' not supported between instances of '{}' and '{}'",
+                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                ),
+            )),
+        }
     }
 
-    fn handle_le(&mut self) -> VmResult<ExecutionFlow> {
+    fn handle_le<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        let result = match (&a, &b) {
-            (Value::Int(x), Value::Int(y)) => *x <= *y,
-            _ if self.is_string_object(&a) && self.is_string_object(&b) => {
-                let s1 = self.expect_string(&a)?;
-                let s2 = self.expect_string(&b)?;
-                s1 <= s2
+        
+        // Fast path: Int <= Int
+        if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
+            self.push(Value::Bool(*x <= *y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Fast path: String <= String
+        if self.is_string_object(&a) && self.is_string_object(&b) {
+            let s1 = self.expect_string(&a)?;
+            let s2 = self.expect_string(&b)?;
+            self.push(Value::Bool(s1 <= s2))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Slow path: __le__ 메서드 조회
+        match self.lookup_method(&a, "__le__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![b.clone()], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        self.push(b)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__le__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__le__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 1, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
             }
-            _ => {
-                return Err(err(
-                    VmErrorKind::TypeError("comparison"),
-                    "unsupported types for '<='".into(),
-                ));
-            }
-        };
-        self.push(Value::Bool(result))?;
-        Ok(ExecutionFlow::Continue)
+            Err(_) => Err(err(
+                VmErrorKind::TypeError("comparison"),
+                format!("'<=' not supported between instances of '{}' and '{}'",
+                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                ),
+            )),
+        }
     }
 
-    fn handle_gt(&mut self) -> VmResult<ExecutionFlow> {
+    fn handle_gt<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        let result = match (&a, &b) {
-            (Value::Int(x), Value::Int(y)) => *x > *y,
-            _ if self.is_string_object(&a) && self.is_string_object(&b) => {
-                let s1 = self.expect_string(&a)?;
-                let s2 = self.expect_string(&b)?;
-                s1 > s2
+        
+        // Fast path: Int > Int
+        if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
+            self.push(Value::Bool(*x > *y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Fast path: String > String
+        if self.is_string_object(&a) && self.is_string_object(&b) {
+            let s1 = self.expect_string(&a)?;
+            let s2 = self.expect_string(&b)?;
+            self.push(Value::Bool(s1 > s2))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Slow path: __gt__ 메서드 조회
+        match self.lookup_method(&a, "__gt__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![b.clone()], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        self.push(b)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__gt__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__gt__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 1, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
             }
-            _ => {
-                return Err(err(
-                    VmErrorKind::TypeError("comparison"),
-                    "unsupported types for '>'".into(),
-                ));
-            }
-        };
-        self.push(Value::Bool(result))?;
-        Ok(ExecutionFlow::Continue)
+            Err(_) => Err(err(
+                VmErrorKind::TypeError("comparison"),
+                format!("'>' not supported between instances of '{}' and '{}'",
+                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                ),
+            )),
+        }
     }
 
-    fn handle_ge(&mut self) -> VmResult<ExecutionFlow> {
+    fn handle_ge<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        let result = match (&a, &b) {
-            (Value::Int(x), Value::Int(y)) => *x >= *y,
-            _ if self.is_string_object(&a) && self.is_string_object(&b) => {
-                let s1 = self.expect_string(&a)?;
-                let s2 = self.expect_string(&b)?;
-                s1 >= s2
+        
+        // Fast path: Int >= Int
+        if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
+            self.push(Value::Bool(*x >= *y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Fast path: String >= String
+        if self.is_string_object(&a) && self.is_string_object(&b) {
+            let s1 = self.expect_string(&a)?;
+            let s2 = self.expect_string(&b)?;
+            self.push(Value::Bool(s1 >= s2))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+        
+        // Slow path: __ge__ 메서드 조회
+        match self.lookup_method(&a, "__ge__", module) {
+            Ok(method_impl) => {
+                match self.call_method_impl(method_impl, &a, vec![b.clone()], module, io)? {
+                    Some(result) => {
+                        self.push(result)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                    None => {
+                        // UserDefined 메서드: 스택 기반 메서드 호출
+                        self.push(a)?;
+                        self.push(b)?;
+                        let method_sym = module.symbols.iter().position(|s| s == "__ge__")
+                            .ok_or_else(|| err(
+                                VmErrorKind::TypeError("method"),
+                                "__ge__ symbol not found".into()
+                            ))? as u16;
+                        self.handle_call_method(method_sym, 1, module, io)?;
+                        Ok(ExecutionFlow::Continue)
+                    }
+                }
             }
-            _ => {
-                return Err(err(
-                    VmErrorKind::TypeError("comparison"),
-                    "unsupported types for '>='".into(),
-                ));
-            }
-        };
-        self.push(Value::Bool(result))?;
-        Ok(ExecutionFlow::Continue)
+            Err(_) => Err(err(
+                VmErrorKind::TypeError("comparison"),
+                format!("'>=' not supported between instances of '{}' and '{}'",
+                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                ),
+            )),
+        }
     }
 
     fn handle_not(&mut self) -> VmResult<ExecutionFlow> {
@@ -464,7 +949,12 @@ impl Vm {
 
     // ===== CallValue 핸들러 =====
 
-    fn handle_call_value(&mut self, argc: u8, module: &mut Module) -> VmResult<ExecutionFlow> {
+    fn handle_call_value<IO: RuntimeIo>(
+        &mut self,
+        argc: u8,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
         let argc = argc as usize;
         // 인자들 팝
         let mut args = Vec::with_capacity(argc);
@@ -479,36 +969,29 @@ impl Vm {
         // callable 타입에 따라 호출
         match &callable {
             // Phase 4: 모든 callable이 Object로 통합
-            Value::Object(obj) => match &obj.data {
-                // 사용자 정의 클래스 호출
-                ObjectData::UserClass { class_id, methods } => {
-                    // 인스턴스 생성
-                    let instance_value = self.make_user_instance(*class_id);
+            Value::Object(obj) => {
+                match &obj.data {
+                    // 사용자 정의 클래스 호출
+                    ObjectData::UserClass { class_id, methods } => {
+                        // 인스턴스 생성
+                        let instance_value = self.make_user_instance(*class_id);
 
-                    // __init__ 메서드가 있으면 호출
-                    if let Some(&init_func_id) = methods.get("__init__") {
-                        // __init__(self, *args) 호출
-                        let mut init_args = vec![instance_value.clone()];
-                        init_args.extend(args);
-                        let num_args = init_args.len();
-
-                        // 인자를 순서대로 스택에 푸시
-                        for arg in init_args {
-                            self.push(arg)?;
-                        }
-
-                        // __init__ 함수 호출
-                        self.enter_func(module, init_func_id as usize, num_args)?;
-
-                        // 스택에 instance를 먼저 저장 (return 시 instance가 남도록)
-                        self.stack.insert(
-                            self.frames.last().unwrap().ret_stack_size,
-                            instance_value,
-                        );
-                        
-                        // Note: CallValue의 특수한 경우 - continue로 즉시 다음 명령어로
-                        // 이 부분은 run_with_io에서 특별 처리 필요
-                        return Ok(ExecutionFlow::Continue);
+                        // __init__ 메서드가 있으면 호출
+                        if let Some(&init_func_id) = methods.get("__init__") {
+                            // __init__를 일반 함수처럼 호출
+                            // 컴파일러가 __init__의 마지막에 self를 자동으로 반환하도록 생성함
+                            // 1. self를 첫 번째 인자로 푸시
+                            self.push(instance_value)?;
+                            
+                            // 2. 나머지 인자들 푸시
+                            for arg in args {
+                                self.push(arg)?;
+                            }
+                            
+                            // 3. __init__ 함수 호출 (일반 함수 호출과 동일)
+                            self.enter_func(module, init_func_id as usize, argc + 1)?;
+                            
+                            return Ok(ExecutionFlow::Continue);
                     } else if !args.is_empty() {
                         let class_def = &module.classes[*class_id as usize];
                         return Err(err(
@@ -520,23 +1003,38 @@ impl Vm {
                         ));
                     }
 
-                    self.push(instance_value)?;
-                }
-                // Builtin 클래스 호출 (range 등)
-                ObjectData::BuiltinClass { class_type } => {
+                        self.push(instance_value)?;
+                    }
+                    // Builtin 클래스 호출 (range 등)
+                    ObjectData::BuiltinClass { class_type } => {
                     use crate::vm::type_def::BuiltinClassType;
                     let result = match class_type {
                         BuiltinClassType::Range => crate::vm::builtins::range::create_range(args)?,
+                        BuiltinClassType::List => {
+                            // TODO: list() 생성자는 나중에 구현
+                            return Err(err(
+                                VmErrorKind::TypeError("list constructor"),
+                                "list() constructor not yet implemented".to_string(),
+                            ));
+                        }
+                        BuiltinClassType::Dict => {
+                            // TODO: dict() 생성자는 나중에 구현
+                            return Err(err(
+                                VmErrorKind::TypeError("dict constructor"),
+                                "dict() constructor not yet implemented".to_string(),
+                            ));
+                        }
                     };
-                    self.push(result)?;
+                        self.push(result)?;
+                    }
+                    _ => {
+                        return Err(err(
+                            VmErrorKind::TypeError("callable"),
+                            format!("{:?} is not callable", callable),
+                        ));
+                    }
                 }
-                _ => {
-                    return Err(err(
-                        VmErrorKind::TypeError("callable"),
-                        format!("{:?} is not callable", callable),
-                    ));
-                }
-            },
+            }
             _ => {
                 return Err(err(
                     VmErrorKind::TypeError("callable"),
@@ -568,9 +1066,10 @@ impl Vm {
         if self.frames.is_empty() {
             Ok(ExecutionFlow::Return(ret))
         } else {
-            if let Some(v) = ret {
-                self.push(v)?;
-            }
+            // Python에서 함수가 명시적 return 없이 끝나면 암묵적으로 None을 반환
+            // (__init__의 경우 leave_frame에서 이미 self로 변환됨)
+            let value = ret.unwrap_or(Value::None);
+            self.push(value)?;
             Ok(ExecutionFlow::Continue)
         }
     }
@@ -631,6 +1130,261 @@ impl Vm {
             }
         }
         
+        Ok(ExecutionFlow::Continue)
+    }
+
+    // ==================== 컬렉션 핸들러 ====================
+
+    fn handle_build_list(&mut self, count: u16) -> VmResult<ExecutionFlow> {
+        let mut items = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            items.push(self.pop()?);
+        }
+        items.reverse(); // 스택에서 꺼낸 순서를 역순으로
+
+        use crate::vm::type_def::TYPE_LIST;
+        use crate::vm::value::{Object, ObjectData};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let list_obj = Value::Object(Rc::new(Object::new(
+            TYPE_LIST,
+            ObjectData::List {
+                items: RefCell::new(items),
+            },
+        )));
+
+        self.push(list_obj)?;
+        Ok(ExecutionFlow::Continue)
+    }
+
+    fn handle_build_dict(&mut self, pair_count: u16) -> VmResult<ExecutionFlow> {
+        use crate::vm::type_def::TYPE_DICT;
+        use crate::vm::value::{DictKey, Object, ObjectData};
+        use std::cell::RefCell;
+        use std::collections::HashMap;
+        use std::rc::Rc;
+
+        let mut map = HashMap::new();
+        for _ in 0..pair_count {
+            let value = self.pop()?;
+            let key = self.pop()?;
+            
+            // key를 DictKey로 변환
+            let dict_key = match key {
+                Value::Int(i) => DictKey::Int(i),
+                Value::Bool(b) => DictKey::Bool(b),
+                Value::Object(ref obj) => {
+                    if let ObjectData::String(ref s) = obj.data {
+                        DictKey::String(s.clone())
+                    } else {
+                        return Err(err(
+                            VmErrorKind::TypeError("dict key"),
+                            "Dict keys must be int, bool, or str".to_string(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(err(
+                        VmErrorKind::TypeError("dict key"),
+                        "Dict keys must be int, bool, or str".to_string(),
+                    ));
+                }
+            };
+
+            map.insert(dict_key, value);
+        }
+
+        let dict_obj = Value::Object(Rc::new(Object::new(
+            TYPE_DICT,
+            ObjectData::Dict {
+                map: RefCell::new(map),
+            },
+        )));
+
+        self.push(dict_obj)?;
+        Ok(ExecutionFlow::Continue)
+    }
+
+    fn handle_load_index(&mut self) -> VmResult<ExecutionFlow> {
+        let index = self.pop()?;
+        let obj = self.pop()?;
+
+        match obj {
+            Value::Object(ref o) => {
+                match &o.data {
+                    ObjectData::List { items } => {
+                        // 인덱스를 정수로 변환
+                        let idx = match index {
+                            Value::Int(i) => i,
+                            _ => {
+                                return Err(err(
+                                    VmErrorKind::TypeError("list index"),
+                                    "List indices must be integers".to_string(),
+                                ));
+                            }
+                        };
+
+                        let items_ref = items.borrow();
+                        let len = items_ref.len() as i64;
+                        
+                        // 음수 인덱스 지원
+                        let actual_idx = if idx < 0 {
+                            (len + idx) as usize
+                        } else {
+                            idx as usize
+                        };
+
+                        // 범위 체크
+                        if actual_idx >= items_ref.len() {
+                            return Err(err(
+                                VmErrorKind::TypeError("list index"),
+                                format!("List index out of range: {}", idx),
+                            ));
+                        }
+
+                        let value = items_ref[actual_idx].clone();
+                        self.push(value)?;
+                    }
+                    ObjectData::Dict { map } => {
+                        // key를 DictKey로 변환
+                        use crate::vm::value::DictKey;
+                        let dict_key = match index {
+                            Value::Int(i) => DictKey::Int(i),
+                            Value::Bool(b) => DictKey::Bool(b),
+                            Value::Object(ref obj) => {
+                                if let ObjectData::String(ref s) = obj.data {
+                                    DictKey::String(s.clone())
+                                } else {
+                                    return Err(err(
+                                        VmErrorKind::TypeError("dict key"),
+                                        "Dict keys must be int, bool, or str".to_string(),
+                                    ));
+                                }
+                            }
+                            _ => {
+                                return Err(err(
+                                    VmErrorKind::TypeError("dict key"),
+                                    "Dict keys must be int, bool, or str".to_string(),
+                                ));
+                            }
+                        };
+
+                        let map_ref = map.borrow();
+                        match map_ref.get(&dict_key) {
+                            Some(value) => {
+                                self.push(value.clone())?;
+                            }
+                            None => {
+                                return Err(err(
+                                    VmErrorKind::TypeError("dict key"),
+                                    format!("KeyError: {:?}", dict_key),
+                                ));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(err(
+                            VmErrorKind::TypeError("indexing"),
+                            "Object does not support indexing".to_string(),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(err(
+                    VmErrorKind::TypeError("indexing"),
+                    "Only lists and dicts support indexing".to_string(),
+                ));
+            }
+        }
+
+        Ok(ExecutionFlow::Continue)
+    }
+
+    fn handle_store_index(&mut self) -> VmResult<ExecutionFlow> {
+        let value = self.pop()?;
+        let index = self.pop()?;
+        let obj = self.pop()?;
+
+        match obj {
+            Value::Object(ref o) => {
+                match &o.data {
+                    ObjectData::List { items } => {
+                        // 인덱스를 정수로 변환
+                        let idx = match index {
+                            Value::Int(i) => i,
+                            _ => {
+                                return Err(err(
+                                    VmErrorKind::TypeError("list index"),
+                                    "List indices must be integers".to_string(),
+                                ));
+                            }
+                        };
+
+                        let mut items_mut = items.borrow_mut();
+                        let len = items_mut.len() as i64;
+                        
+                        // 음수 인덱스 지원
+                        let actual_idx = if idx < 0 {
+                            (len + idx) as usize
+                        } else {
+                            idx as usize
+                        };
+
+                        // 범위 체크
+                        if actual_idx >= items_mut.len() {
+                            return Err(err(
+                                VmErrorKind::TypeError("list index"),
+                                format!("List assignment index out of range: {}", idx),
+                            ));
+                        }
+
+                        items_mut[actual_idx] = value;
+                    }
+                    ObjectData::Dict { map } => {
+                        // key를 DictKey로 변환
+                        use crate::vm::value::DictKey;
+                        let dict_key = match index {
+                            Value::Int(i) => DictKey::Int(i),
+                            Value::Bool(b) => DictKey::Bool(b),
+                            Value::Object(ref obj) => {
+                                if let ObjectData::String(ref s) = obj.data {
+                                    DictKey::String(s.clone())
+                                } else {
+                                    return Err(err(
+                                        VmErrorKind::TypeError("dict key"),
+                                        "Dict keys must be int, bool, or str".to_string(),
+                                    ));
+                                }
+                            }
+                            _ => {
+                                return Err(err(
+                                    VmErrorKind::TypeError("dict key"),
+                                    "Dict keys must be int, bool, or str".to_string(),
+                                ));
+                            }
+                        };
+
+                        let mut map_mut = map.borrow_mut();
+                        map_mut.insert(dict_key, value);
+                    }
+                    _ => {
+                        return Err(err(
+                            VmErrorKind::TypeError("indexing"),
+                            "Object does not support item assignment".to_string(),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(err(
+                    VmErrorKind::TypeError("indexing"),
+                    "Only lists and dicts support item assignment".to_string(),
+                ));
+            }
+        }
+
         Ok(ExecutionFlow::Continue)
     }
 }

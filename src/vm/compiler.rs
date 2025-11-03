@@ -11,6 +11,7 @@ pub struct Compiler {
     symbols: std::collections::HashMap<String, u16>,
 }
 
+
 impl Compiler {
     pub fn new() -> Self {
         Self {
@@ -64,6 +65,13 @@ impl Compiler {
                         self.emit_expr(value, fun);
                         let attr_sym = self.intern(attr);
                         fun.code.push(I::StoreAttr(attr_sym));
+                    }
+                    Expr::Index { object, index } => {
+                        // obj[idx] = value
+                        self.emit_expr(object, fun);
+                        self.emit_expr(index, fun);
+                        self.emit_expr(value, fun);
+                        fun.code.push(I::StoreIndex);
                     }
                     _ => {
                         // Semantic analysis should have caught this
@@ -213,6 +221,14 @@ impl Compiler {
                 self.module.functions[fid] = f;
             }
             Stmt::Class { name, methods, .. } => {
+                // 먼저 빈 ClassDef를 module.classes에 추가
+                let class_id = self.module.classes.len();
+                let class_def = ClassDef {
+                    name: name.clone(),
+                    methods: HashMap::new(), // 나중에 업데이트
+                };
+                self.module.classes.push(class_def);
+                
                 // 각 메서드를 함수로 컴파일
                 let mut method_map = HashMap::new();
                 for method in methods {
@@ -220,15 +236,8 @@ impl Compiler {
                     method_map.insert(method.name.clone(), method_func_id);
                 }
 
-                // ClassDef 생성
-                let class_def = ClassDef {
-                    name: name.clone(),
-                    methods: method_map,
-                };
-
-                // Module.classes에 추가하고 global에 저장
-                let class_id = self.module.classes.len();
-                self.module.classes.push(class_def.clone());
+                // ClassDef 업데이트
+                self.module.classes[class_id].methods = method_map.clone();
 
                 // Phase 4: UserClass를 Object로 저장
                 let name_sym = self.intern(name);
@@ -237,7 +246,7 @@ impl Compiler {
                     super::type_def::TYPE_USER_START + class_id as u16,
                     super::value::ObjectData::UserClass {
                         class_id: class_id as u16,
-                        methods: class_def.methods.clone(),
+                        methods: method_map,
                     },
                 )));
                 self.module.consts.push(class_obj);
@@ -270,6 +279,12 @@ impl Compiler {
         for s in &method.body {
             self.emit_stmt_with_locals(s, &mut f, &local_map);
         }
+        
+        // __init__ 메서드는 자동으로 self를 반환
+        if method.name == "__init__" {
+            f.code.push(I::LoadLocal(0)); // self는 항상 첫 번째 로컬 변수
+        }
+        
         f.code.push(I::Return);
         self.module.functions[fid] = f;
 
@@ -402,6 +417,30 @@ impl Compiler {
                 let attr_sym = self.intern(attr);
                 fun.code.push(I::LoadAttr(attr_sym));
             }
+            Expr::List(elements) => {
+                // 각 요소를 스택에 push
+                for elem in elements {
+                    self.emit_expr(elem, fun);
+                }
+                // BuildList instruction
+                fun.code.push(I::BuildList(elements.len() as u16));
+            }
+            Expr::Dict(pairs) => {
+                // 각 key-value 쌍을 스택에 push (key, value 순서)
+                for (key, value) in pairs {
+                    self.emit_expr(key, fun);
+                    self.emit_expr(value, fun);
+                }
+                // BuildDict instruction
+                fun.code.push(I::BuildDict(pairs.len() as u16));
+            }
+            Expr::Index { object, index } => {
+                // object와 index를 스택에 push
+                self.emit_expr(object, fun);
+                self.emit_expr(index, fun);
+                // LoadIndex instruction
+                fun.code.push(I::LoadIndex);
+            }
         }
     }
 
@@ -469,6 +508,13 @@ impl Compiler {
                         self.emit_expr_with_locals(value, fun, locals);
                         let attr_sym = self.intern(attr);
                         fun.code.push(I::StoreAttr(attr_sym));
+                    }
+                    Expr::Index { object, index } => {
+                        // obj[idx] = value
+                        self.emit_expr_with_locals(object, fun, locals);
+                        self.emit_expr_with_locals(index, fun, locals);
+                        self.emit_expr_with_locals(value, fun, locals);
+                        fun.code.push(I::StoreIndex);
                     }
                     _ => {
                         // Semantic analysis should have caught this
@@ -762,6 +808,17 @@ impl Compiler {
                         fun.code.push(I::CallBuiltin(bid, args.len() as u8));
                         return;
                     }
+                    // 클래스인지 확인
+                    let is_class = self.module.classes.iter().any(|c| c.name == *name);
+                    if is_class {
+                        // 클래스는 CallValue 사용
+                        self.emit_expr_with_locals(func_name, fun, locals);
+                        for a in args {
+                            self.emit_expr_with_locals(a, fun, locals);
+                        }
+                        fun.code.push(I::CallValue(args.len() as u8));
+                        return;
+                    }
                     // user function: resolve to existing function id by name
                     let fid = self.resolve_function_id(name);
                     for a in args {
@@ -783,17 +840,41 @@ impl Compiler {
                 let attr_sym = self.intern(attr);
                 fun.code.push(I::LoadAttr(attr_sym));
             }
+            Expr::List(elements) => {
+                // 각 요소를 스택에 push
+                for elem in elements {
+                    self.emit_expr_with_locals(elem, fun, locals);
+                }
+                // BuildList instruction
+                fun.code.push(I::BuildList(elements.len() as u16));
+            }
+            Expr::Dict(pairs) => {
+                // 각 key-value 쌍을 스택에 push (key, value 순서)
+                for (key, value) in pairs {
+                    self.emit_expr_with_locals(key, fun, locals);
+                    self.emit_expr_with_locals(value, fun, locals);
+                }
+                // BuildDict instruction
+                fun.code.push(I::BuildDict(pairs.len() as u16));
+            }
+            Expr::Index { object, index } => {
+                // object와 index를 스택에 push
+                self.emit_expr_with_locals(object, fun, locals);
+                self.emit_expr_with_locals(index, fun, locals);
+                // LoadIndex instruction
+                fun.code.push(I::LoadIndex);
+            }
         }
     }
 }
 
-fn collect_locals(params: &Vec<String>, body: &Vec<StmtS>) -> HashMap<String, u16> {
+fn collect_locals(params: &[String], body: &[StmtS]) -> HashMap<String, u16> {
     let mut map: HashMap<String, u16> = HashMap::new();
     for (i, p) in params.iter().enumerate() {
         map.insert(p.clone(), i as u16);
     }
     let mut seen: HashSet<String> = params.iter().cloned().collect();
-    fn walk(body: &Vec<StmtS>, seen: &mut HashSet<String>) {
+    fn walk(body: &[StmtS], seen: &mut HashSet<String>) {
         for s in body {
             match &s.0 {
                 Stmt::Assign { target, .. } => {

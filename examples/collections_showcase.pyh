@@ -1,0 +1,75 @@
+# Pyhyeon Collections 종합 예제
+
+print("===== List 기본 =====")
+# 리스트 생성 및 조작
+fruits = ["apple", "banana", "cherry"]
+print(fruits)
+fruits.append("date")
+print(fruits)
+
+# 인덱싱
+print(fruits[0])
+print(fruits[-1])
+
+# 메서드
+fruits.reverse()
+print(fruits)
+
+print("===== Dict 기본 =====")
+# 딕셔너리 생성
+scores = {"Alice": 95, "Bob": 87, "Charlie": 92}
+print(scores)
+
+# 접근 및 수정
+alice_score = scores["Alice"]
+print(alice_score)
+scores["David"] = 88
+print(scores)
+
+# 메서드
+all_scores = scores.values()
+print(all_scores)
+
+print("===== For 루프 =====")
+# 리스트 순회
+numbers = [1, 2, 3, 4, 5]
+sum = 0
+for n in numbers:
+  sum = sum + n
+print(sum)
+
+# 딕셔너리 순회 (키)
+print("Students:")
+for name in scores:
+  print(name)
+
+print("===== 중첩 컬렉션 =====")
+# 학생 데이터
+student1 = {"name": "Alice", "scores": [95, 87, 92]}
+student2 = {"name": "Bob", "scores": [88, 91, 85]}
+students = [student1, student2]
+
+for student in students:
+  name = student["name"]
+  scores = student["scores"]
+  print(name)
+  
+  total = 0
+  for score in scores:
+    total = total + score
+  
+  avg = total // 3
+  print(avg)
+
+print("===== 실용 예제: 단어 개수 세기 =====")
+words = ["apple", "banana", "apple", "cherry", "banana", "apple"]
+word_count = {}
+
+for word in words:
+  current = word_count.get(word, 0)
+  word_count[word] = current + 1
+
+print(word_count)
+
+print("완료!")
+

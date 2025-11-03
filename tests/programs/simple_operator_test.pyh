@@ -1,0 +1,15 @@
+# 간단한 연산자 테스트
+
+class Number:
+  def __init__(self, val):
+    self.val = val
+  
+  def __add__(self, other):
+    print("__add__ called")
+    return Number(self.val + other.val)
+
+a = Number(5)
+b = Number(3)
+c = a + b
+print(c.val)
+

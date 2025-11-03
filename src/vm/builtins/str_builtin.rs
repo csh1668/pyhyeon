@@ -145,6 +145,75 @@ pub fn str_count(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
     Ok(Value::Int(count as i64))
 }
 
+// ========== 매직 메서드 구현 ==========
+
+/// __add__: String + String (concatenation)
+pub fn str_add(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let s1 = expect_string(receiver)?;
+    let s2 = expect_string(&args[0])?;
+    Ok(make_string(s1.to_string() + s2))
+}
+
+/// __mul__: String * Int (repetition)
+pub fn str_mul(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let s = expect_string(receiver)?;
+    let n = match &args[0] {
+        Value::Int(n) => *n,
+        _ => return Err(err(
+            VmErrorKind::TypeError("str"),
+            "can't multiply string by non-int".into()
+        )),
+    };
+    
+    if n < 0 {
+        Ok(make_string(String::new()))
+    } else {
+        Ok(make_string(s.repeat(n as usize)))
+    }
+}
+
+/// __lt__: String < String
+pub fn str_lt(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let s1 = expect_string(receiver)?;
+    let s2 = expect_string(&args[0])?;
+    Ok(Value::Bool(s1 < s2))
+}
+
+/// __le__: String <= String
+pub fn str_le(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let s1 = expect_string(receiver)?;
+    let s2 = expect_string(&args[0])?;
+    Ok(Value::Bool(s1 <= s2))
+}
+
+/// __gt__: String > String
+pub fn str_gt(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let s1 = expect_string(receiver)?;
+    let s2 = expect_string(&args[0])?;
+    Ok(Value::Bool(s1 > s2))
+}
+
+/// __ge__: String >= String
+pub fn str_ge(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let s1 = expect_string(receiver)?;
+    let s2 = expect_string(&args[0])?;
+    Ok(Value::Bool(s1 >= s2))
+}
+
+/// __eq__: String == String
+pub fn str_eq(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let s1 = expect_string(receiver)?;
+    let s2 = expect_string(&args[0])?;
+    Ok(Value::Bool(s1 == s2))
+}
+
+/// __ne__: String != String
+pub fn str_ne(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let s1 = expect_string(receiver)?;
+    let s2 = expect_string(&args[0])?;
+    Ok(Value::Bool(s1 != s2))
+}
+
 /// str 타입 정의 등록
 pub fn register_type() -> TypeDef {
     TypeDef::new("str", TypeFlags::IMMUTABLE | TypeFlags::ITERABLE).with_methods(vec![

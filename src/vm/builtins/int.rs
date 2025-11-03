@@ -45,3 +45,115 @@ pub fn register_type() -> TypeDef {
     TypeDef::new("int", TypeFlags::IMMUTABLE)
 }
 
+// ========== 매직 메서드 구현 ==========
+
+fn expect_int(v: &Value) -> VmResult<i64> {
+    match v {
+        Value::Int(n) => Ok(*n),
+        _ => Err(err(
+            VmErrorKind::TypeError("int"),
+            format!("expected int, got {}", type_name(v))
+        )),
+    }
+}
+
+/// __add__: Int + Int
+pub fn int_add(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    Ok(Value::Int(a.wrapping_add(b)))
+}
+
+/// __sub__: Int - Int
+pub fn int_sub(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    Ok(Value::Int(a.wrapping_sub(b)))
+}
+
+/// __mul__: Int * Int
+pub fn int_mul(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    Ok(Value::Int(a.wrapping_mul(b)))
+}
+
+/// __floordiv__: Int // Int
+pub fn int_floordiv(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    if b == 0 {
+        return Err(err(
+            VmErrorKind::ZeroDivision,
+            "integer division or modulo by zero".into()
+        ));
+    }
+    Ok(Value::Int(a / b))
+}
+
+/// __mod__: Int % Int
+pub fn int_mod(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    if b == 0 {
+        return Err(err(
+            VmErrorKind::ZeroDivision,
+            "integer division or modulo by zero".into()
+        ));
+    }
+    Ok(Value::Int(a % b))
+}
+
+/// __neg__: -Int
+pub fn int_neg(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    Ok(Value::Int(-a))
+}
+
+/// __pos__: +Int
+pub fn int_pos(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    Ok(Value::Int(a))
+}
+
+/// __lt__: Int < Int
+pub fn int_lt(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    Ok(Value::Bool(a < b))
+}
+
+/// __le__: Int <= Int
+pub fn int_le(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    Ok(Value::Bool(a <= b))
+}
+
+/// __gt__: Int > Int
+pub fn int_gt(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    Ok(Value::Bool(a > b))
+}
+
+/// __ge__: Int >= Int
+pub fn int_ge(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    Ok(Value::Bool(a >= b))
+}
+
+/// __eq__: Int == Int
+pub fn int_eq(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    Ok(Value::Bool(a == b))
+}
+
+/// __ne__: Int != Int
+pub fn int_ne(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    Ok(Value::Bool(a != b))
+}

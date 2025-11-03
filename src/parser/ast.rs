@@ -56,6 +56,12 @@ pub enum Expr {
         object: Box<ExprS>,
         attr: String,
     },
+    List(Vec<ExprS>),
+    Dict(Vec<(ExprS, ExprS)>),
+    Index {
+        object: Box<ExprS>,
+        index: Box<ExprS>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,0 +1,20 @@
+# 간단한 반환 테스트
+
+class Number:
+  def __init__(self, val):
+    self.val = val
+  
+  def __add__(self, other):
+    print("Adding")
+    result = self.val + other.val
+    print("Sum is:")
+    print(result)
+    print("Returning result")
+    return result
+
+a = Number(10)
+b = Number(20)
+c = a + b
+print("Got:")
+print(c)
+

@@ -249,7 +249,7 @@ function App() {
         special: ['self'],
         
         // 내장 함수들
-        builtins: ['print', 'input', 'int', 'bool', 'str', 'len', 'range'],
+        builtins: ['print', 'input', 'int', 'bool', 'str', 'len', 'range', 'list', 'dict'],
         
         // 연산자들
         operators: [
@@ -258,7 +258,7 @@ function App() {
         ],
         
         // 구분자들
-        delimiters: ['(', ')', ':', ',', ';', '.'],
+        delimiters: ['(', ')', '[', ']', '{', '}', ':', ',', ';', '.'],
         
         tokenizer: {
           root: [
@@ -294,8 +294,12 @@ function App() {
             // 연산자
             [/==|!=|<=|>=|\/\/|[+\-*%<>=]/, 'operator'],
             
-            // 구분자 (점 추가)
-            [/[()\:,;.]/, 'delimiter'],
+            // 구분자
+            [/[()\[\]{}\:,;.]/, 'delimiter'],
+            
+            // 괄호 강조
+            [/[\[\]]/, 'delimiter.bracket'],
+            [/[{}]/, 'delimiter.brace'],
             
             // 공백
             [/[ \t\r\n]+/, 'white'],
@@ -328,14 +332,20 @@ function App() {
       monaco.languages.setLanguageConfiguration('pyh', {
         brackets: [
           ['(', ')'],
+          ['[', ']'],
+          ['{', '}'],
         ],
         autoClosingPairs: [
           { open: '(', close: ')' },
+          { open: '[', close: ']' },
+          { open: '{', close: '}' },
           { open: '"', close: '"' },
           { open: "'", close: "'" },
         ],
         surroundingPairs: [
           { open: '(', close: ')' },
+          { open: '[', close: ']' },
+          { open: '{', close: '}' },
           { open: '"', close: '"' },
           { open: "'", close: "'" },
         ],
@@ -357,7 +367,7 @@ function App() {
       })
 
       instance = monaco.editor.create(editorRef.current!, {
-        value: 'name = input("Enter your name:")\nprint("Hello, " + name + "!")\n',
+        value: '# Welcome to Pyhyeon!\n\n# Lists\nnums = [1, 2, 3, 4, 5]\nfor n in nums:\n  print(n)\n\n# Dicts\nperson = {"name": "Alice", "age": 30}\nprint(person["name"])\n',
         language: 'pyh',
         theme: 'pyhyeon-dark',
         automaticLayout: true,

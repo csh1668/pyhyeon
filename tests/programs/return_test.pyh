@@ -1,0 +1,14 @@
+# Return 테스트
+
+class Number:
+  def __init__(self, val):
+    self.val = val
+  
+  def get_double(self):
+    return self.val * 2
+
+a = Number(5)
+b = a.get_double()
+print("Result:")
+print(b)
+

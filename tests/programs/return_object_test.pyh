@@ -1,0 +1,19 @@
+# 객체 반환 테스트
+
+class Number:
+  def __init__(self, val):
+    self.val = val
+  
+  def create_double(self):
+    doubled = self.val * 2
+    print("Creating new with val:")
+    print(doubled)
+    new_num = Number(doubled)
+    print("Created, returning")
+    return new_num
+
+a = Number(10)
+b = a.create_double()
+print("Got object:")
+print(b.val)
+

@@ -67,14 +67,14 @@ fn analyze_stmt_module(
         }
         Stmt::Assign { target, value } => {
             analyze_expr_module(value, scopes, ctx)?;
-            // target이 Variable이면 정의, Attribute이면 object만 검증
+            // target이 Variable이면 정의, Attribute나 Index이면 object만 검증
             match &target.0 {
                 Expr::Variable(name) => {
                     if !scopes.is_defined(name) {
                         scopes.define(name.clone());
                     }
                 }
-                Expr::Attribute { .. } => {
+                Expr::Attribute { .. } | Expr::Index { .. } => {
                     analyze_expr_module(target, scopes, ctx)?;
                 }
                 _ => {
@@ -213,6 +213,24 @@ fn analyze_expr_module(
             analyze_expr_module(object, scopes, ctx)?;
             Ok(())
         }
+        Expr::List(elements) => {
+            for elem in elements {
+                analyze_expr_module(elem, scopes, ctx)?;
+            }
+            Ok(())
+        }
+        Expr::Dict(pairs) => {
+            for (key, value) in pairs {
+                analyze_expr_module(key, scopes, ctx)?;
+                analyze_expr_module(value, scopes, ctx)?;
+            }
+            Ok(())
+        }
+        Expr::Index { object, index } => {
+            analyze_expr_module(object, scopes, ctx)?;
+            analyze_expr_module(index, scopes, ctx)?;
+            Ok(())
+        }
     }
 }
 
@@ -299,7 +317,7 @@ fn analyze_stmt_function(
     match &stmt.0 {
         Stmt::Assign { target, value } => {
             analyze_expr_function(value, scopes, ctx, locals, assigned)?;
-            // target이 Variable이면 정의, Attribute이면 object만 검증
+            // target이 Variable이면 정의, Attribute나 Index이면 object만 검증
             match &target.0 {
                 Expr::Variable(name) => {
                     assigned.insert(name.clone());
@@ -307,7 +325,7 @@ fn analyze_stmt_function(
                         scopes.define(name.clone());
                     }
                 }
-                Expr::Attribute { .. } => {
+                Expr::Attribute { .. } | Expr::Index { .. } => {
                     analyze_expr_function(target, scopes, ctx, locals, assigned)?;
                 }
                 _ => {
@@ -365,6 +383,11 @@ fn analyze_stmt_function(
         Stmt::For { var, iterable, body } => {
             // iterable 표현식 분석
             analyze_expr_function(iterable, scopes, ctx, locals, assigned)?;
+            
+            // 루프 변수를 스코프에 정의
+            if !scopes.is_defined(var) {
+                scopes.define(var.clone());
+            }
             
             // 루프 변수가 할당됨을 표시
             if locals.contains(var) {
@@ -448,6 +471,24 @@ fn analyze_expr_function(
         }
         Expr::Attribute { object, .. } => {
             analyze_expr_function(object, scopes, ctx, locals, assigned)?;
+            Ok(())
+        }
+        Expr::List(elements) => {
+            for elem in elements {
+                analyze_expr_function(elem, scopes, ctx, locals, assigned)?;
+            }
+            Ok(())
+        }
+        Expr::Dict(pairs) => {
+            for (key, value) in pairs {
+                analyze_expr_function(key, scopes, ctx, locals, assigned)?;
+                analyze_expr_function(value, scopes, ctx, locals, assigned)?;
+            }
+            Ok(())
+        }
+        Expr::Index { object, index } => {
+            analyze_expr_function(object, scopes, ctx, locals, assigned)?;
+            analyze_expr_function(index, scopes, ctx, locals, assigned)?;
             Ok(())
         }
     }

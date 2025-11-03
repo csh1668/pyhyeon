@@ -1,11 +1,9 @@
-use pyhyeon;
 use pyhyeon::runtime_io::BufferIo;
 use std::fs;
 use std::path::PathBuf;
 
 /// E2E 통합 테스트: tests/programs/ 디렉터리의 모든 .pyh 파일을
 /// VM으로 실행하여 정상 동작을 확인합니다.
-
 fn get_test_programs() -> Vec<PathBuf> {
     let test_dir = PathBuf::from("tests/programs");
     if !test_dir.exists() {
@@ -212,3 +210,13 @@ test_program!(
     inputs = ["Alice", "Bob", "Charlie"],
     contains = ["Hello, Alice", "Hello, Bob", "Hello, Charlie"]
 );
+
+// List and Dict tests
+test_program!(test_list_basic, "list_basic.pyh");
+test_program!(test_list_methods, "list_methods.pyh");
+test_program!(test_list_for, "list_for.pyh");
+test_program!(test_dict_basic, "dict_basic.pyh");
+test_program!(test_dict_methods, "dict_methods.pyh");
+test_program!(test_dict_for, "dict_for.pyh");
+test_program!(test_collections_complex, "collections_complex.pyh");
+test_program!(test_list_comprehension_alt, "list_comprehension_alt.pyh");

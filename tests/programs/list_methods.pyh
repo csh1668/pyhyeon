@@ -1,0 +1,40 @@
+# List 메서드 테스트
+
+# append
+x = [1, 2, 3]
+x.append(4)
+print(x)
+
+# pop
+y = x.pop()
+print(y)
+print(x)
+
+# extend
+x.extend([5, 6])
+print(x)
+
+# insert
+x.insert(0, 0)
+print(x)
+
+# reverse
+x.reverse()
+print(x)
+
+# sort
+x.sort()
+print(x)
+
+# index
+idx = x.index(3)
+print(idx)
+
+# count
+cnt = x.count(1)
+print(cnt)
+
+# clear
+x.clear()
+print(x)
+

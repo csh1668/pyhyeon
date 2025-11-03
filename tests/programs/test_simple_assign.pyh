@@ -1,0 +1,12 @@
+class Number:
+  def __init__(self, val):
+    self.val = val
+
+def test_func():
+  result = Number(99)
+  print(result)
+  return result
+
+x = test_func()
+print("After func")
+print(x)

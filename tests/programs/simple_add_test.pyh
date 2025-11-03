@@ -1,0 +1,23 @@
+# 더 간단한 테스트
+
+class Number:
+  def __init__(self, val):
+    self.val = val
+  
+  def __add__(self, other):
+    result_val = self.val + other.val
+    print("Result val:")
+    print(result_val)
+    new_num = Number(result_val)
+    print("Created new Number")
+    return new_num
+
+print("Creating a")
+a = Number(5)
+print("Creating b")
+b = Number(3)
+print("Calling a + b")
+c = a + b
+print("Got result")
+print(c.val)
+

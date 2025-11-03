@@ -23,7 +23,7 @@ impl Builtin {
 const PRINT: Builtin = Builtin {
     name: "print",
     params: &["value"],
-    min_arity: 1,
+    min_arity: 0, // Allow print() with no arguments
 };
 const INPUT: Builtin = Builtin {
     name: "input",
@@ -68,8 +68,3 @@ pub fn all() -> &'static [Builtin] {
 pub fn lookup(name: &str) -> Option<&'static Builtin> {
     REGISTRY.iter().find(|&b| b.name == name).map(|v| v as _)
 }
-
-// pub struct Builtin {
-//     pub name: String,
-//     pub params:
-// }

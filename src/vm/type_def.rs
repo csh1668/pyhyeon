@@ -60,7 +60,32 @@ pub enum MethodImpl {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NativeMethod {
-    // ========== String 메서드들 (10개) ==========
+    // ========== Int 매직 메서드들 ==========
+    IntAdd,
+    IntSub,
+    IntMul,
+    IntFloorDiv,
+    IntMod,
+    IntNeg,
+    IntPos,
+    IntLt,
+    IntLe,
+    IntGt,
+    IntGe,
+    IntEq,
+    IntNe,
+    
+    // ========== String 매직 메서드들 ==========
+    StrAdd,    // concatenation
+    StrMul,    // repetition
+    StrLt,
+    StrLe,
+    StrGt,
+    StrGe,
+    StrEq,
+    StrNe,
+    
+    // ========== String 일반 메서드들 ==========
     StrUpper,
     StrLower,
     StrStrip,
@@ -71,23 +96,70 @@ pub enum NativeMethod {
     StrEndsWith,
     StrFind,
     StrCount,
-    // ========== Range 메서드들 (3개) ==========
+    
+    // ========== Range 메서드들 ==========
     RangeIter,
     RangeHasNext,
     RangeNext,
-    // ========== 미래 확장 ==========
-    // Int 메서드들:
-    //   IntBitLength, IntToBytes, ...
-    // List 메서드들:
-    //   ListAppend, ListExtend, ListPop, ListReverse, ListSort, ...
-    // Dict 메서드들:
-    //   DictKeys, DictValues, DictItems, DictGet, ...
+    
+    // ========== List 메서드들 ==========
+    ListAppend,
+    ListPop,
+    ListExtend,
+    ListInsert,
+    ListRemove,
+    ListReverse,
+    ListSort,
+    ListClear,
+    ListIndex,
+    ListCount,
+    ListIter,
+    ListHasNext,
+    ListNext,
+    
+    // ========== Dict 메서드들 ==========
+    DictGet,
+    DictKeys,
+    DictValues,
+    DictItems,
+    DictPop,
+    DictUpdate,
+    DictClear,
+    DictIter,
+    DictHasNext,
+    DictNext,
 }
 
 impl NativeMethod {
     /// 메서드 이름 가져오기
     pub fn name(&self) -> &'static str {
         match self {
+            // Int 매직 메서드
+            Self::IntAdd => "__add__",
+            Self::IntSub => "__sub__",
+            Self::IntMul => "__mul__",
+            Self::IntFloorDiv => "__floordiv__",
+            Self::IntMod => "__mod__",
+            Self::IntNeg => "__neg__",
+            Self::IntPos => "__pos__",
+            Self::IntLt => "__lt__",
+            Self::IntLe => "__le__",
+            Self::IntGt => "__gt__",
+            Self::IntGe => "__ge__",
+            Self::IntEq => "__eq__",
+            Self::IntNe => "__ne__",
+            
+            // String 매직 메서드
+            Self::StrAdd => "__add__",
+            Self::StrMul => "__mul__",
+            Self::StrLt => "__lt__",
+            Self::StrLe => "__le__",
+            Self::StrGt => "__gt__",
+            Self::StrGe => "__ge__",
+            Self::StrEq => "__eq__",
+            Self::StrNe => "__ne__",
+            
+            // String 일반 메서드
             Self::StrUpper => "upper",
             Self::StrLower => "lower",
             Self::StrStrip => "strip",
@@ -98,9 +170,38 @@ impl NativeMethod {
             Self::StrEndsWith => "endswith",
             Self::StrFind => "find",
             Self::StrCount => "count",
+            
+            // Range 메서드
             Self::RangeIter => "__iter__",
             Self::RangeHasNext => "__has_next__",
             Self::RangeNext => "__next__",
+            
+            // List 메서드
+            Self::ListAppend => "append",
+            Self::ListPop => "pop",
+            Self::ListExtend => "extend",
+            Self::ListInsert => "insert",
+            Self::ListRemove => "remove",
+            Self::ListReverse => "reverse",
+            Self::ListSort => "sort",
+            Self::ListClear => "clear",
+            Self::ListIndex => "index",
+            Self::ListCount => "count",
+            Self::ListIter => "__iter__",
+            Self::ListHasNext => "__has_next__",
+            Self::ListNext => "__next__",
+            
+            // Dict 메서드
+            Self::DictGet => "get",
+            Self::DictKeys => "keys",
+            Self::DictValues => "values",
+            Self::DictItems => "items",
+            Self::DictPop => "pop",
+            Self::DictUpdate => "update",
+            Self::DictClear => "clear",
+            Self::DictIter => "__iter__",
+            Self::DictHasNext => "__has_next__",
+            Self::DictNext => "__next__",
         }
     }
 }
@@ -140,9 +241,11 @@ impl Arity {
 pub enum BuiltinClassType {
     /// `range(start, stop, step)` 타입
     Range,
+    /// `[1, 2, 3]` 타입
+    List,
+    /// `{"a": 1}` 타입
+    Dict,
     // 미래 확장:
-    // List,   // `[1, 2, 3]`
-    // Dict,   // `{"a": 1}`
     // Set,    // `{1, 2, 3}`
     // Tuple,  // `(1, 2, 3)`
 }
@@ -152,6 +255,8 @@ impl BuiltinClassType {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Range => "range",
+            Self::List => "list",
+            Self::Dict => "dict",
         }
     }
 }
@@ -163,6 +268,8 @@ pub const TYPE_BOOL: u16 = 1;
 pub const TYPE_STR: u16 = 2;
 pub const TYPE_NONE: u16 = 3;
 pub const TYPE_RANGE: u16 = 4;
+pub const TYPE_LIST: u16 = 5;
+pub const TYPE_DICT: u16 = 6;
 pub const TYPE_USER_START: u16 = 100;
 
 // ========== 유틸리티 함수 ==========
@@ -179,6 +286,104 @@ pub fn make_string(s: String) -> crate::vm::bytecode::Value {
         TYPE_STR,
         ObjectData::String(s),
     )))
+}
+
+/// Built-in 타입들 초기화
+///
+/// 모든 built-in 타입(Int, Bool, String, None, Range, List, Dict)의
+/// TypeDef를 생성하고 매직 메서드를 등록합니다.
+pub fn init_builtin_types() -> Vec<TypeDef> {
+    vec![
+        // TYPE_INT (0)
+        TypeDef::new("int", TypeFlags::IMMUTABLE)
+            .with_methods(vec![
+                ("__add__", MethodImpl::Native { func: NativeMethod::IntAdd, arity: Arity::Exact(1) }),
+                ("__sub__", MethodImpl::Native { func: NativeMethod::IntSub, arity: Arity::Exact(1) }),
+                ("__mul__", MethodImpl::Native { func: NativeMethod::IntMul, arity: Arity::Exact(1) }),
+                ("__floordiv__", MethodImpl::Native { func: NativeMethod::IntFloorDiv, arity: Arity::Exact(1) }),
+                ("__mod__", MethodImpl::Native { func: NativeMethod::IntMod, arity: Arity::Exact(1) }),
+                ("__neg__", MethodImpl::Native { func: NativeMethod::IntNeg, arity: Arity::Exact(0) }),
+                ("__pos__", MethodImpl::Native { func: NativeMethod::IntPos, arity: Arity::Exact(0) }),
+                ("__lt__", MethodImpl::Native { func: NativeMethod::IntLt, arity: Arity::Exact(1) }),
+                ("__le__", MethodImpl::Native { func: NativeMethod::IntLe, arity: Arity::Exact(1) }),
+                ("__gt__", MethodImpl::Native { func: NativeMethod::IntGt, arity: Arity::Exact(1) }),
+                ("__ge__", MethodImpl::Native { func: NativeMethod::IntGe, arity: Arity::Exact(1) }),
+                ("__eq__", MethodImpl::Native { func: NativeMethod::IntEq, arity: Arity::Exact(1) }),
+                ("__ne__", MethodImpl::Native { func: NativeMethod::IntNe, arity: Arity::Exact(1) }),
+            ]),
+        
+        // TYPE_BOOL (1)
+        TypeDef::new("bool", TypeFlags::IMMUTABLE),
+        
+        // TYPE_STR (2)
+        TypeDef::new("str", TypeFlags::IMMUTABLE | TypeFlags::ITERABLE)
+            .with_methods(vec![
+                // 매직 메서드
+                ("__add__", MethodImpl::Native { func: NativeMethod::StrAdd, arity: Arity::Exact(1) }),
+                ("__mul__", MethodImpl::Native { func: NativeMethod::StrMul, arity: Arity::Exact(1) }),
+                ("__lt__", MethodImpl::Native { func: NativeMethod::StrLt, arity: Arity::Exact(1) }),
+                ("__le__", MethodImpl::Native { func: NativeMethod::StrLe, arity: Arity::Exact(1) }),
+                ("__gt__", MethodImpl::Native { func: NativeMethod::StrGt, arity: Arity::Exact(1) }),
+                ("__ge__", MethodImpl::Native { func: NativeMethod::StrGe, arity: Arity::Exact(1) }),
+                ("__eq__", MethodImpl::Native { func: NativeMethod::StrEq, arity: Arity::Exact(1) }),
+                ("__ne__", MethodImpl::Native { func: NativeMethod::StrNe, arity: Arity::Exact(1) }),
+                // 일반 메서드
+                ("upper", MethodImpl::Native { func: NativeMethod::StrUpper, arity: Arity::Exact(0) }),
+                ("lower", MethodImpl::Native { func: NativeMethod::StrLower, arity: Arity::Exact(0) }),
+                ("strip", MethodImpl::Native { func: NativeMethod::StrStrip, arity: Arity::Exact(0) }),
+                ("split", MethodImpl::Native { func: NativeMethod::StrSplit, arity: Arity::Range(0, 1) }),
+                ("join", MethodImpl::Native { func: NativeMethod::StrJoin, arity: Arity::Exact(1) }),
+                ("replace", MethodImpl::Native { func: NativeMethod::StrReplace, arity: Arity::Exact(2) }),
+                ("startswith", MethodImpl::Native { func: NativeMethod::StrStartsWith, arity: Arity::Exact(1) }),
+                ("endswith", MethodImpl::Native { func: NativeMethod::StrEndsWith, arity: Arity::Exact(1) }),
+                ("find", MethodImpl::Native { func: NativeMethod::StrFind, arity: Arity::Exact(1) }),
+                ("count", MethodImpl::Native { func: NativeMethod::StrCount, arity: Arity::Exact(1) }),
+            ]),
+        
+        // TYPE_NONE (3)
+        TypeDef::new("NoneType", TypeFlags::IMMUTABLE),
+        
+        // TYPE_RANGE (4)
+        TypeDef::new("range", TypeFlags::IMMUTABLE | TypeFlags::ITERABLE)
+            .with_methods(vec![
+                ("__iter__", MethodImpl::Native { func: NativeMethod::RangeIter, arity: Arity::Exact(0) }),
+                ("__has_next__", MethodImpl::Native { func: NativeMethod::RangeHasNext, arity: Arity::Exact(0) }),
+                ("__next__", MethodImpl::Native { func: NativeMethod::RangeNext, arity: Arity::Exact(0) }),
+            ]),
+        
+        // TYPE_LIST (5)
+        TypeDef::new("list", TypeFlags::ITERABLE)
+            .with_methods(vec![
+                ("append", MethodImpl::Native { func: NativeMethod::ListAppend, arity: Arity::Exact(1) }),
+                ("pop", MethodImpl::Native { func: NativeMethod::ListPop, arity: Arity::Range(0, 1) }),
+                ("extend", MethodImpl::Native { func: NativeMethod::ListExtend, arity: Arity::Exact(1) }),
+                ("insert", MethodImpl::Native { func: NativeMethod::ListInsert, arity: Arity::Exact(2) }),
+                ("remove", MethodImpl::Native { func: NativeMethod::ListRemove, arity: Arity::Exact(1) }),
+                ("reverse", MethodImpl::Native { func: NativeMethod::ListReverse, arity: Arity::Exact(0) }),
+                ("sort", MethodImpl::Native { func: NativeMethod::ListSort, arity: Arity::Exact(0) }),
+                ("clear", MethodImpl::Native { func: NativeMethod::ListClear, arity: Arity::Exact(0) }),
+                ("index", MethodImpl::Native { func: NativeMethod::ListIndex, arity: Arity::Exact(1) }),
+                ("count", MethodImpl::Native { func: NativeMethod::ListCount, arity: Arity::Exact(1) }),
+                ("__iter__", MethodImpl::Native { func: NativeMethod::ListIter, arity: Arity::Exact(0) }),
+                ("__has_next__", MethodImpl::Native { func: NativeMethod::ListHasNext, arity: Arity::Exact(0) }),
+                ("__next__", MethodImpl::Native { func: NativeMethod::ListNext, arity: Arity::Exact(0) }),
+            ]),
+        
+        // TYPE_DICT (6)
+        TypeDef::new("dict", TypeFlags::ITERABLE)
+            .with_methods(vec![
+                ("get", MethodImpl::Native { func: NativeMethod::DictGet, arity: Arity::Range(1, 2) }),
+                ("keys", MethodImpl::Native { func: NativeMethod::DictKeys, arity: Arity::Exact(0) }),
+                ("values", MethodImpl::Native { func: NativeMethod::DictValues, arity: Arity::Exact(0) }),
+                ("items", MethodImpl::Native { func: NativeMethod::DictItems, arity: Arity::Exact(0) }),
+                ("pop", MethodImpl::Native { func: NativeMethod::DictPop, arity: Arity::Range(1, 2) }),
+                ("update", MethodImpl::Native { func: NativeMethod::DictUpdate, arity: Arity::Exact(1) }),
+                ("clear", MethodImpl::Native { func: NativeMethod::DictClear, arity: Arity::Exact(0) }),
+                ("__iter__", MethodImpl::Native { func: NativeMethod::DictIter, arity: Arity::Exact(0) }),
+                ("__has_next__", MethodImpl::Native { func: NativeMethod::DictHasNext, arity: Arity::Exact(0) }),
+                ("__next__", MethodImpl::Native { func: NativeMethod::DictNext, arity: Arity::Exact(0) }),
+            ]),
+    ]
 }
 
 #[cfg(test)]

@@ -74,6 +74,14 @@ pub enum RawToken {
     LParen,
     #[token(")")]
     RParen,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
+    #[token("{")]
+    LBrace,
+    #[token("}")]
+    RBrace,
     #[token(":")]
     Colon,
     #[token(",")]

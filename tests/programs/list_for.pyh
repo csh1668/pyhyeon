@@ -1,0 +1,14 @@
+# List와 for 루프 테스트
+
+nums = [1, 2, 3, 4, 5]
+print(nums)
+
+for n in nums:
+  print(n)
+
+# 빈 리스트
+empty = []
+for x in empty:
+  print(x)
+print("Done")
+

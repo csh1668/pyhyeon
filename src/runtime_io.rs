@@ -103,12 +103,11 @@ impl RuntimeIo for BufferIo {
     }
     fn read_line_with_prompt(&mut self, prompt: Option<&str>) -> ReadResult {
         // Show prompt only if it's different from last time (prevents duplicate on retry)
-        if let Some(p) = prompt {
-            if self.last_prompt.as_deref() != Some(p) {
+        if let Some(p) = prompt
+            && self.last_prompt.as_deref() != Some(p) {
                 self.write(p);
                 self.last_prompt = Some(p.to_string());
             }
-        }
 
         match self.read_line() {
             ReadResult::Ok(line) => {

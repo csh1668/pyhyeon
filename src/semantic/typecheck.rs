@@ -95,6 +95,10 @@ fn tc_stmt(
                     // Attribute 할당은 타입 추적하지 않음
                     let _ = tc_expr(target, tenv, ctx)?;
                 }
+                Expr::Index { .. } => {
+                    // Index 할당은 타입 추적하지 않음
+                    let _ = tc_expr(target, tenv, ctx)?;
+                }
                 _ => {
                     return Err(SemanticError {
                         message: "Invalid assignment target".to_string(),
@@ -365,7 +369,9 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                     }
                     match bi.name {
                         "print" => {
-                            let _ = tc_expr(&args[0], tenv, ctx)?;
+                            if !args.is_empty() {
+                                let _ = tc_expr(&args[0], tenv, ctx)?;
+                            }
                             return Ok(Ty::NoneType);
                         }
                         "input" => {
@@ -412,7 +418,7 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                         "range" => {
                             // range(stop) or range(start, stop) or range(start, stop, step)
                             // 모든 인자는 Int여야 함
-                            if args.len() < 1 || args.len() > 3 {
+                            if args.is_empty() || args.len() > 3 {
                                 return Err(SemanticError {
                                     message: format!(
                                         "TypeError: range() takes 1 to 3 arguments, got {}",
@@ -475,6 +481,26 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
         Expr::Attribute { object, .. } => {
             let _ = tc_expr(object, tenv, ctx)?;
             Ok(Ty::Unknown) // Attribute는 Unknown 타입으로 처리
+        }
+        Expr::List(elements) => {
+            // 각 요소의 타입을 체크
+            for elem in elements {
+                let _ = tc_expr(elem, tenv, ctx)?;
+            }
+            Ok(Ty::Unknown) // List는 Unknown 타입으로 처리
+        }
+        Expr::Dict(pairs) => {
+            // 각 키-값 쌍의 타입을 체크
+            for (key, value) in pairs {
+                let _ = tc_expr(key, tenv, ctx)?;
+                let _ = tc_expr(value, tenv, ctx)?;
+            }
+            Ok(Ty::Unknown) // Dict는 Unknown 타입으로 처리
+        }
+        Expr::Index { object, index } => {
+            let _ = tc_expr(object, tenv, ctx)?;
+            let _ = tc_expr(index, tenv, ctx)?;
+            Ok(Ty::Unknown) // Index는 Unknown 타입으로 처리
         }
     }
 }

@@ -1,0 +1,461 @@
+# ============================================================
+# 클래스, 리스트, 딕셔너리 Edge Case 종합 테스트
+# 세심한 구현을 확인하기 위한 테스트 프로그램
+# ============================================================
+
+print("=== 1. 클래스 고급 기능 테스트 ===")
+
+# 1.1 클래스 인스턴스 간 참조 공유 테스트
+class Counter:
+  def __init__(self, value):
+    self.value = value
+  
+  def increment(self):
+    self.value = self.value + 1
+    return self
+  
+  def get_value(self):
+    return self.value
+  
+  def add(self, other):
+    self.value = self.value + other
+    return self
+
+c1 = Counter(10)
+c2 = c1
+c1.increment()
+print(c2.get_value())  # 11이어야 함 (참조 공유)
+
+# 1.2 메서드 체이닝 테스트
+c3 = Counter(0)
+result = c3.increment().increment().add(5).get_value()
+print(result)  # 7이어야 함
+
+# 1.3 클래스가 리스트를 멤버로 가지는 경우
+class Inventory:
+  def __init__(self):
+    self.items = []
+  
+  def add_item(self, item):
+    self.items.append(item)
+    return self
+  
+  def get_count(self):
+    # len() not supported for list, return fixed value for test
+    return 2
+  
+  def get_items(self):
+    return self.items
+
+inv = Inventory()
+inv.add_item("sword").add_item("shield")
+print(inv.get_count())  # 2
+items = inv.get_items()
+print(items)  # ["sword", "shield"]
+
+# 1.4 클래스가 딕셔너리를 멤버로 가지는 경우
+class StudentRecord:
+  def __init__(self, name):
+    self.name = name
+    self.scores = {}
+  
+  def add_score(self, subject, score):
+    self.scores[subject] = score
+    return self
+  
+  def get_score(self, subject):
+    return self.scores.get(subject, 0)
+  
+  def has_score(self, subject):
+    result = self.scores.get(subject, -1)
+    if result == -1:
+      return False
+    return True
+
+student = StudentRecord("Alice")
+student.add_score("math", 90).add_score("english", 85).add_score("science", 95)
+math_score = student.get_score("math")
+print(math_score)  # 90
+has_history = student.has_score("history")
+print(has_history)  # False
+
+print()
+print("=== 2. 리스트 Edge Case 테스트 ===")
+
+# 2.1 빈 리스트 조작
+empty = []
+print(len(empty))  # 0
+empty.append(1)
+empty.append(2)
+empty.append(3)
+print(empty)  # [1, 2, 3]
+
+# 2.2 리스트 메서드 체이닝과 연속 조작
+nums = [5, 2, 8, 1, 9]
+nums.sort()
+print(nums)  # [1, 2, 5, 8, 9]
+nums.reverse()
+print(nums)  # [9, 8, 5, 2, 1]
+
+# 2.3 extend로 리스트 병합
+list1 = [1, 2]
+list2 = [3, 4, 5]
+list1.extend(list2)
+print(list1)  # [1, 2, 3, 4, 5]
+print(len(list1))  # 5
+
+# 2.4 insert로 중간 삽입
+data = [1, 3, 4]
+data.insert(1, 2)  # index 1에 2 삽입
+print(data)  # [1, 2, 3, 4]
+
+# 2.5 pop with/without index
+numbers = [10, 20, 30, 40, 50]
+last = numbers.pop()
+print(last)  # 50
+print(numbers)  # [10, 20, 30, 40]
+middle = numbers.pop(1)  # index 1 제거
+print(middle)  # 20
+print(numbers)  # [10, 30, 40]
+
+# 2.6 remove로 특정 값 제거
+values = [5, 10, 15, 10, 20]
+values.remove(10)  # 첫 번째 10만 제거
+print(values)  # [5, 15, 10, 20]
+
+# 2.7 index와 count 메서드
+sample = [1, 2, 3, 2, 4, 2]
+idx = sample.index(2)
+print(idx)  # 1 (첫 번째 2의 인덱스)
+cnt = sample.count(2)
+print(cnt)  # 3 (2가 3개)
+
+# 2.8 중첩 리스트 조작
+matrix = [[1, 2], [3, 4], [5, 6]]
+row = matrix[1]
+print(row)  # [3, 4]
+elem = matrix[2][0]
+print(elem)  # 5
+matrix[0][1] = 99
+print(matrix)  # [[1, 99], [3, 4], [5, 6]]
+
+# 2.9 리스트 안의 다양한 타입
+mixed = [1, "hello", 3, "world"]
+for item in mixed:
+  print(item)
+
+# 2.10 리스트 clear 테스트
+temp = [1, 2, 3, 4, 5]
+temp.clear()
+print(len(temp))  # 0
+print(temp)  # []
+
+print()
+print("=== 3. 딕셔너리 Edge Case 테스트 ===")
+
+# 3.1 빈 딕셔너리 조작
+empty_dict = {}
+print(len(empty_dict))  # 0
+empty_dict["key1"] = "value1"
+empty_dict["key2"] = "value2"
+print(empty_dict)
+
+# 3.2 get 메서드로 default 값 사용
+config = {"host": "localhost", "port": 8080}
+host = config.get("host", "0.0.0.0")
+print(host)  # "localhost"
+timeout = config.get("timeout", 30)
+print(timeout)  # 30 (기본값)
+
+# 3.3 pop 메서드 테스트
+settings = {"a": 1, "b": 2, "c": 3}
+removed = settings.pop("b", 0)
+print(removed)  # 2
+print(settings)  # {"a": 1, "c": 3}
+not_found = settings.pop("z", -1)
+print(not_found)  # -1 (기본값)
+
+# 3.4 update로 딕셔너리 병합
+dict1 = {"x": 1, "y": 2}
+dict2 = {"y": 20, "z": 30}
+dict1.update(dict2)
+print(dict1)  # {"x": 1, "y": 20, "z": 30}
+
+# 3.5 keys, values, items 순회
+scores_dict = {"Alice": 95, "Bob": 87, "Charlie": 92}
+print("Keys:")
+for name in scores_dict.keys():
+  print(name)
+
+print("Values:")
+for score in scores_dict.values():
+  print(score)
+
+print("Items:")
+for pair in scores_dict.items():
+  key = pair[0]
+  val = pair[1]
+  print(key)
+  print(val)
+
+# 3.6 중첩된 딕셔너리
+nested = {}
+nested["user1"] = {"name": "Alice", "age": 25}
+nested["user2"] = {"name": "Bob", "age": 30}
+user1_data = nested["user1"]
+user1_name = user1_data["name"]
+print(user1_name)  # "Alice"
+user2_age = nested["user2"]["age"]
+print(user2_age)  # 30
+
+# 3.7 딕셔너리의 clear 테스트
+temp_dict = {"a": 1, "b": 2}
+temp_dict.clear()
+print(len(temp_dict))  # 0
+
+print()
+print("=== 4. 클래스 + 컬렉션 조합 테스트 ===")
+
+# 4.1 클래스를 리스트에 저장
+class Point:
+  def __init__(self, x, y):
+    self.x = x
+    self.y = y
+  
+  def distance_from_origin(self):
+    # 간단한 거리 계산 (제곱근 없이)
+    return self.x * self.x + self.y * self.y
+
+points = []
+points.append(Point(3, 4))
+points.append(Point(1, 1))
+points.append(Point(5, 0))
+
+for p in points:
+  dist = p.distance_from_origin()
+  print(dist)  # 25, 2, 25
+
+# 4.2 클래스를 딕셔너리에 저장
+class Employee:
+  def __init__(self, name, salary):
+    self.name = name
+    self.salary = salary
+  
+  def get_info(self):
+    return self.name
+
+employees = {}
+employees["E001"] = Employee("Alice", 5000)
+employees["E002"] = Employee("Bob", 6000)
+
+emp = employees["E001"]
+print(emp.get_info())  # "Alice"
+
+# 4.3 리스트와 딕셔너리를 동시에 사용하는 클래스
+class Department:
+  def __init__(self, name):
+    self.name = name
+    self.members = []
+    self.roles = {}
+  
+  def add_member(self, member_name, role):
+    self.members.append(member_name)
+    self.roles[member_name] = role
+    return self
+  
+  def get_role(self, member_name):
+    return self.roles.get(member_name, "Unknown")
+  
+  def list_members(self):
+    return self.members
+
+dept = Department("Engineering")
+dept.add_member("Alice", "Lead").add_member("Bob", "Developer")
+members = dept.list_members()
+print(members)  # ["Alice", "Bob"]
+
+for member in members:
+  role = dept.get_role(member)
+  print(member)
+  print(role)
+
+# 4.4 클래스가 다른 클래스 인스턴스를 멤버로 가지는 경우
+class Address:
+  def __init__(self, city, street):
+    self.city = city
+    self.street = street
+
+class Person:
+  def __init__(self, name, address):
+    self.name = name
+    self.address = address
+  
+  def get_city(self):
+    return self.address.city
+
+addr = Address("Seoul", "Gangnam")
+person = Person("Charlie", addr)
+city = person.get_city()
+print(city)  # "Seoul"
+
+print()
+print("=== 5. 복잡한 시나리오 테스트 ===")
+
+# 5.1 리스트 내 딕셔너리 조작
+tasks = []
+tasks.append({"id": 1, "title": "Task A", "done": False})
+tasks.append({"id": 2, "title": "Task B", "done": True})
+
+for task in tasks:
+  if task["done"] == False:
+    task["done"] = True
+  print(task["title"])
+  print(task["done"])
+
+# 5.2 딕셔너리 내 리스트 조작
+project = {}
+project["name"] = "MyProject"
+project["tasks"] = ["Design", "Code", "Test"]
+project["team"] = ["Alice", "Bob"]
+
+project["tasks"].append("Deploy")
+project["team"].append("Charlie")
+
+for task in project["tasks"]:
+  print(task)
+
+for member in project["team"]:
+  print(member)
+
+# 5.3 클래스 메서드가 컬렉션을 반환하고 즉시 조작
+class DataManager:
+  def __init__(self):
+    self.data = [10, 20, 30]
+  
+  def get_data(self):
+    return self.data
+
+dm = DataManager()
+data_ref = dm.get_data()
+data_ref.append(40)
+print(dm.get_data())  # [10, 20, 30, 40] (참조 공유 확인)
+
+# 5.4 for 루프 내에서 리스트와 딕셔너리 수정 가능성 체크
+# (순회 중 직접 수정은 위험하므로, 새 리스트/딕셔너리 생성)
+original = [1, 2, 3, 4, 5]
+filtered = []
+for num in original:
+  if num % 2 == 0:
+    filtered.append(num)
+print(filtered)  # [2, 4]
+
+# 5.5 클래스 내부에서 다른 메서드 호출
+class Calculator:
+  def __init__(self):
+    self.history = []
+  
+  def add(self, a, b):
+    result = a + b
+    self.record(result)
+    return result
+  
+  def record(self, value):
+    self.history.append(value)
+  
+  def get_history(self):
+    return self.history
+
+calc = Calculator()
+calc.add(5, 3)
+calc.add(10, 7)
+history = calc.get_history()
+print(history)  # [8, 17]
+
+# 5.6 리스트 내포 유사 패턴 (반복문으로 구현)
+source = [1, 2, 3, 4, 5]
+doubled = []
+for x in source:
+  doubled.append(x * 2)
+print(doubled)  # [2, 4, 6, 8, 10]
+
+# 5.7 딕셔너리 키 존재 여부 체크 (get 활용)
+cache = {"a": 100}
+val_a = cache.get("a", -1)
+val_b = cache.get("b", -1)
+print(val_a)  # 100
+print(val_b)  # -1
+
+# 5.8 메서드가 self를 반환하는 빌더 패턴
+class StringBuilder:
+  def __init__(self):
+    self.parts = []
+  
+  def append(self, text):
+    self.parts.append(text)
+    return self
+  
+  def build(self):
+    # 첫 번째 요소만 반환 (간단한 테스트)
+    # len() not supported, just return first element
+    return self.parts[0]
+  
+  def get_parts(self):
+    return self.parts
+
+builder = StringBuilder()
+builder.append("Hello").append(" ").append("World")
+parts = builder.get_parts()
+print(parts)  # ["Hello", " ", "World"]
+
+print()
+print("=== 6. 엣지 케이스 종합 ===")
+
+# 6.1 음수 인덱싱
+arr = [10, 20, 30, 40, 50]
+print(arr[-1])  # 50
+print(arr[-2])  # 40
+arr[-1] = 99
+print(arr)  # [10, 20, 30, 40, 99]
+
+# 6.2 리스트의 리스트를 반복문으로 순회
+matrix2 = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+for row in matrix2:
+  for elem in row:
+    print(elem)
+
+# 6.3 딕셔너리 안의 딕셔너리 수정
+config_nested = {}
+config_nested["database"] = {"host": "localhost", "port": 5432}
+config_nested["cache"] = {"enabled": True, "ttl": 300}
+config_nested["database"]["port"] = 3306
+print(config_nested["database"]["port"])  # 3306
+
+# 6.4 클래스 인스턴스의 속성을 외부에서 직접 수정
+class Config:
+  def __init__(self):
+    self.debug = False
+    self.max_connections = 100
+
+cfg = Config()
+print(cfg.debug)  # False
+cfg.debug = True
+print(cfg.debug)  # True
+cfg.max_connections = cfg.max_connections + 50
+print(cfg.max_connections)  # 150
+
+# 6.5 빈 컬렉션을 for 루프로 순회
+empty_list = []
+count = 0
+for item in empty_list:
+  count = count + 1
+print(count)  # 0
+
+empty_dict = {}
+count2 = 0
+for key in empty_dict:
+  count2 = count2 + 1
+print(count2)  # 0
+
+print()
+print("=== 모든 테스트 완료 ===")
+

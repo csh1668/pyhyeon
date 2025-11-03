@@ -30,6 +30,7 @@ macro_rules! maybe_boxed {
 enum PostfixOp {
     Attr(String),
     Call(Vec<ExprS>),
+    Index(ExprS),
 }
 
 pub fn expr_parser<'tokens, I>()
@@ -37,8 +38,32 @@ pub fn expr_parser<'tokens, I>()
 where
     I: ValueInput<'tokens, Token = Token, Span = SimpleSpan> + 'tokens,
 {
-    let parser = recursive(|expr| {
+    
+    
+    maybe_boxed!(recursive(|expr| {
         let ident = select! { Token::Identifier(s) => s }.labelled("identifier");
+
+        // List literal: [expr, expr, ...]
+        let list_literal = expr
+            .clone()
+            .separated_by(just(Token::Comma))
+            .allow_trailing()
+            .collect()
+            .delimited_by(just(Token::LBracket), just(Token::RBracket))
+            .map(Expr::List)
+            .labelled("list literal");
+
+        // Dict literal: {key: value, key: value, ...}
+        let dict_literal = expr
+            .clone()
+            .then_ignore(just(Token::Colon))
+            .then(expr.clone())
+            .separated_by(just(Token::Comma))
+            .allow_trailing()
+            .collect()
+            .delimited_by(just(Token::LBrace), just(Token::RBrace))
+            .map(Expr::Dict)
+            .labelled("dict literal");
 
         // Primary: literals, variables, parenthesized expressions
         let primary = choice((
@@ -49,6 +74,8 @@ where
                 Token::None => Expr::Literal(Literal::None),
             }
             .labelled("literal"),
+            list_literal,
+            dict_literal,
             ident.map(Expr::Variable),
             expr.clone()
                 .delimited_by(just(Token::LParen), just(Token::RParen))
@@ -59,20 +86,24 @@ where
             (node, s.into_range())
         });
 
-        // Postfix: handles . and () chaining
-        // Example: obj.attr, obj.method(), obj.method().attr
+        // Postfix: handles ., (), and [] chaining
+        // Example: obj.attr, obj.method(), obj[0], obj[i].attr
         let postfix_op = choice((
             // .attr (attribute access)
             just(Token::Dot)
-                .ignore_then(ident.clone())
-                .map(|attr| PostfixOp::Attr(attr)),
+                .ignore_then(ident)
+                .map(PostfixOp::Attr),
             // (args) (function/method call)
             expr.clone()
                 .separated_by(just(Token::Comma))
                 .allow_trailing()
                 .collect()
                 .delimited_by(just(Token::LParen), just(Token::RParen))
-                .map(|args| PostfixOp::Call(args)),
+                .map(PostfixOp::Call),
+            // [index] (indexing)
+            expr.clone()
+                .delimited_by(just(Token::LBracket), just(Token::RBracket))
+                .map(PostfixOp::Index),
         ));
 
         let atom = primary.foldl(postfix_op.repeated(), |base: ExprS, op: PostfixOp| {
@@ -94,6 +125,16 @@ where
                         Expr::Call {
                             func_name: Box::new(base),
                             args,
+                        },
+                        start..end,
+                    )
+                }
+                PostfixOp::Index(index) => {
+                    let end = index.1.end;
+                    (
+                        Expr::Index {
+                            object: Box::new(base),
+                            index: Box::new(index),
                         },
                         start..end,
                     )
@@ -220,9 +261,7 @@ where
         ));
 
         or_expr.labelled("expression")
-    });
-    
-    maybe_boxed!(parser)
+    }))
 }
 
 pub fn stmt_parser<'tokens, I>()
@@ -232,7 +271,9 @@ where
 {
     let expr = expr_parser().boxed();
 
-    let parser = recursive(|stmt| {
+    
+    
+    maybe_boxed!(recursive(|stmt| {
         let ident = select! { Token::Identifier(s) => s }.labelled("identifier");
 
         // Line end (either newline or end of input)
@@ -341,7 +382,7 @@ where
             .labelled("while statement");
 
         let for_stmt = just(Token::For)
-            .ignore_then(ident.clone())
+            .ignore_then(ident)
             .then_ignore(just(Token::In))
             .then(expr.clone())
             .then(block.clone())
@@ -354,10 +395,9 @@ where
 
         // Class statement
         let method_def = just(Token::Def)
-            .ignore_then(ident.clone())
+            .ignore_then(ident)
             .then(
                 ident
-                    .clone()
                     .separated_by(just(Token::Comma))
                     .allow_trailing()
                     .collect()
@@ -367,7 +407,7 @@ where
             .map(|((name, params), body)| MethodDef { name, params, body });
 
         let class_stmt = just(Token::Class)
-            .ignore_then(ident.clone())
+            .ignore_then(ident)
             .then_ignore(just(Token::Colon))
             .then(
                 just(Token::Newline)
@@ -415,9 +455,7 @@ where
                     .or(just(Token::Dedent).ignored())
                     .or(end().ignored()),
             ))
-    });
-    
-    maybe_boxed!(parser)
+    }))
 }
 
 pub fn program_parser<'tokens, I>()
@@ -428,14 +466,14 @@ where
     let line = stmt_parser().boxed();
     let blanks = just(Token::Newline).ignored().repeated();
 
-    let parser = blanks
+    
+    
+    maybe_boxed!(blanks
         .clone()
         .ignore_then(line.clone().repeated().collect::<Vec<Vec<StmtS>>>())
         .map(|lines| lines.into_iter().flatten().collect::<Vec<StmtS>>())
         .then_ignore(blanks)
-        .then_ignore(end());
-    
-    maybe_boxed!(parser)
+        .then_ignore(end()))
 }
 
 #[cfg(test)]
@@ -461,7 +499,7 @@ mod tests {
         let tokens = tokenize(source);
         let eoi_span = SimpleSpan::new(source.len(), source.len());
         let stream =
-            chumsky::input::Stream::from_iter(tokens.into_iter()).map(eoi_span, |(t, s)| (t, s));
+            chumsky::input::Stream::from_iter(tokens).map(eoi_span, |(t, s)| (t, s));
         expr_parser().parse(stream).into_result()
     }
 
@@ -469,7 +507,7 @@ mod tests {
         let tokens = tokenize(source);
         let eoi_span = SimpleSpan::new(source.len(), source.len());
         let stream =
-            chumsky::input::Stream::from_iter(tokens.into_iter()).map(eoi_span, |(t, s)| (t, s));
+            chumsky::input::Stream::from_iter(tokens).map(eoi_span, |(t, s)| (t, s));
         program_parser().parse(stream).into_result()
     }
 

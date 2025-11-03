@@ -106,6 +106,22 @@ pub enum Instruction {
     /// Attribute 저장: obj.attr = value
     /// Stack: object, value →
     StoreAttr(u16 /* attr_name_sym */),
+
+    /// 리스트 생성: 스택에서 n개의 값을 꺼내 리스트 생성
+    /// Stack: val1, val2, ..., valn → list
+    BuildList(u16 /* count */),
+
+    /// 딕셔너리 생성: 스택에서 2n개의 값을 꺼내 딕셔너리 생성
+    /// Stack: key1, val1, key2, val2, ..., keyn, valn → dict
+    BuildDict(u16 /* pair_count */),
+
+    /// 인덱스 로드: obj[idx]
+    /// Stack: object, index → value
+    LoadIndex,
+
+    /// 인덱스 저장: obj[idx] = value
+    /// Stack: object, index, value →
+    StoreIndex,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,17 +169,8 @@ impl Default for Module {
 impl Module {
     /// 새 모듈 생성 및 builtin 타입 초기화
     ///
-    /// 5개의 builtin 타입(int, bool, str, NoneType, range)을 자동으로 초기화합니다.
-    ///
-    /// # 초기화되는 타입들
-    ///
-    /// - `types[0]` = int (IMMUTABLE)
-    /// - `types[1]` = bool (IMMUTABLE)
-    /// - `types[2]` = str (IMMUTABLE | ITERABLE, 메서드 10개)
-    /// - `types[3]` = NoneType (IMMUTABLE)
-    /// - `types[4]` = range (IMMUTABLE | ITERABLE, 메서드 3개)
-    ///
-    /// 타입 정의는 `vm::builtins::register_all_types()`에서 가져옵니다.
+    /// 7개의 builtin 타입(int, bool, str, NoneType, range, list, dict)을 자동으로 초기화합니다.
+    /// 타입 정의는 `type_def::init_builtin_types()`에서 가져옵니다.
     pub fn new() -> Self {
         Module {
             consts: Vec::new(),
@@ -172,7 +179,7 @@ impl Module {
             symbols: Vec::new(),
             functions: Vec::new(),
             classes: Vec::new(),
-            types: super::builtins::register_all_types(),
+            types: super::type_def::init_builtin_types(),
         }
     }
 }
@@ -194,8 +201,8 @@ mod tests {
     fn test_module_type_table_initialization() {
         let module = Module::new();
 
-        // 타입 테이블이 5개 (int, bool, str, NoneType, range) 초기화되어야 함
-        assert_eq!(module.types.len(), 5);
+        // 타입 테이블이 7개 (int, bool, str, NoneType, range, list, dict) 초기화되어야 함
+        assert_eq!(module.types.len(), 7);
 
         // 각 타입의 이름 확인
         assert_eq!(module.types[TYPE_INT as usize].name, "int");
@@ -203,6 +210,8 @@ mod tests {
         assert_eq!(module.types[TYPE_STR as usize].name, "str");
         assert_eq!(module.types[TYPE_NONE as usize].name, "NoneType");
         assert_eq!(module.types[TYPE_RANGE as usize].name, "range");
+        assert_eq!(module.types[TYPE_LIST as usize].name, "list");
+        assert_eq!(module.types[TYPE_DICT as usize].name, "dict");
     }
 
     #[test]
@@ -210,8 +219,8 @@ mod tests {
         let module = Module::new();
         let str_type = &module.types[TYPE_STR as usize];
 
-        // str 타입은 10개의 메서드를 가져야 함
-        assert_eq!(str_type.methods.len(), 10);
+        // str 타입은 18개의 메서드를 가져야 함 (10개 일반 메서드 + 8개 매직 메서드)
+        assert_eq!(str_type.methods.len(), 18);
 
         // 주요 메서드 확인
         assert!(str_type.methods.contains_key("upper"));

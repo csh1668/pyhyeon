@@ -1,0 +1,21 @@
+# 복잡한 컬렉션 테스트
+
+# Nested lists
+matrix = [[1, 2], [3, 4]]
+print(matrix)
+print(matrix[0])
+print(matrix[1][0])
+
+# List of dicts
+users = [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]
+for user in users:
+  name = user["name"]
+  print(name)
+
+# Dict with list values
+data = {"numbers": [1, 2, 3], "letters": ["a", "b"]}
+print(data)
+nums = data["numbers"]
+for n in nums:
+  print(n)
+

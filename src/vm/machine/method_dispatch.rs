@@ -50,6 +50,23 @@ impl Vm {
         method_name: &str,
         module: &Module,
     ) -> VmResult<MethodImpl> {
+        // UserInstance는 별도 처리 (클래스 테이블 사용)
+        if let Value::Object(obj) = value
+            && let ObjectData::UserInstance { class_id } = &obj.data {
+                let class_def = &module.classes[*class_id as usize];
+                
+                // 클래스의 메서드 테이블에서 찾기
+                let func_id = class_def.methods.get(method_name).ok_or_else(|| {
+                    err(
+                        VmErrorKind::TypeError("method"),
+                        format!("'{}' object has no method '{}'", class_def.name, method_name),
+                    )
+                })?;
+                
+                // UserDefined 메서드로 반환
+                return Ok(MethodImpl::UserDefined { func_id: *func_id });
+            }
+        
         // 1. 값의 타입 ID 가져오기
         let type_id = self.get_type_id(value)?;
 
@@ -69,6 +86,51 @@ impl Vm {
                 format!("'{}' object has no method '{}'", type_def.name, method_name),
             )
         })
+    }
+
+    /// 메서드 구현을 실행하는 헬퍼 함수
+    ///
+    /// lookup_method로 얻은 MethodImpl을 받아서 실행합니다.
+    /// 
+    /// UserDefined 메서드는 연산자 내에서 동기적으로 실행할 수 없으므로
+    /// None을 반환합니다. 이 경우 호출자는 스택 기반 실행을 사용해야 합니다.
+    pub(super) fn call_method_impl<IO: RuntimeIo>(
+        &mut self,
+        method_impl: MethodImpl,
+        receiver: &Value,
+        args: Vec<Value>,
+        module: &Module,
+        io: &mut IO,
+    ) -> VmResult<Option<Value>> {
+        match method_impl {
+            MethodImpl::Native { func, arity } => {
+                // Arity 체크
+                if !arity.check(args.len()) {
+                    return Err(err(
+                        VmErrorKind::ArityError {
+                            expected: match arity {
+                                Arity::Exact(n) => n,
+                                _ => 0,
+                            },
+                            got: args.len(),
+                        },
+                        format!(
+                            "method takes {} argument(s) but {} given",
+                            arity.description(),
+                            args.len()
+                        ),
+                    ));
+                }
+                
+                // Native 메서드 실행
+                Ok(Some(self.call_native_method_dispatch(func, receiver, args, module, io)?))
+            }
+            MethodImpl::UserDefined { .. } => {
+                // UserDefined 메서드는 동기적 실행 불가
+                // None을 반환하여 호출자가 스택 기반 실행을 사용하도록 함
+                Ok(None)
+            }
+        }
     }
 
     /// CallMethod 명령어 핸들러
@@ -106,8 +168,8 @@ impl Vm {
         let method_name = &module.symbols[method_sym as usize];
 
         // Phase 4: UserInstance 메서드는 별도 처리 (타입 테이블이 아닌 클래스 테이블 사용)
-        if let Value::Object(obj) = &receiver {
-            if let ObjectData::UserInstance { class_id } = &obj.data {
+        if let Value::Object(obj) = &receiver
+            && let ObjectData::UserInstance { class_id } = &obj.data {
                 let class_def = &module.classes[*class_id as usize];
 
                 // 메서드 테이블에서 찾기
@@ -128,7 +190,6 @@ impl Vm {
                 self.enter_func(module, *func_id as usize, argc + 1)?;
                 return Ok(());
             }
-        }
 
         // 4. 메서드 조회 (통일된 방식!)
         let method_impl = self.lookup_method(&receiver, method_name, module)?;
@@ -201,26 +262,80 @@ impl Vm {
         _module: &Module,
         _io: &mut dyn RuntimeIo,
     ) -> VmResult<Value> {
-        use super::super::builtins::{range, str_builtin};
+        use super::super::builtins::{int, range, str_builtin, list_methods, dict_methods};
+        use super::super::type_def::NativeMethod as NM;
         
-        // builtins 모듈에서 직접 호출 (중간 계층 제거)
+        // builtins 모듈에서 직접 호출
         match method {
-            // String 메서드들
-            super::super::type_def::NativeMethod::StrUpper => str_builtin::str_upper(receiver, args),
-            super::super::type_def::NativeMethod::StrLower => str_builtin::str_lower(receiver, args),
-            super::super::type_def::NativeMethod::StrStrip => str_builtin::str_strip(receiver, args),
-            super::super::type_def::NativeMethod::StrSplit => str_builtin::str_split(receiver, args),
-            super::super::type_def::NativeMethod::StrJoin => str_builtin::str_join(receiver, args),
-            super::super::type_def::NativeMethod::StrReplace => str_builtin::str_replace(receiver, args),
-            super::super::type_def::NativeMethod::StrStartsWith => str_builtin::str_starts_with(receiver, args),
-            super::super::type_def::NativeMethod::StrEndsWith => str_builtin::str_ends_with(receiver, args),
-            super::super::type_def::NativeMethod::StrFind => str_builtin::str_find(receiver, args),
-            super::super::type_def::NativeMethod::StrCount => str_builtin::str_count(receiver, args),
+            // Int 매직 메서드들
+            // 실제로는 사용되지 않으나, Dynamic Dispatch를 위해 남겨둠
+            NM::IntAdd => int::int_add(receiver, args),
+            NM::IntSub => int::int_sub(receiver, args),
+            NM::IntMul => int::int_mul(receiver, args),
+            NM::IntFloorDiv => int::int_floordiv(receiver, args),
+            NM::IntMod => int::int_mod(receiver, args),
+            NM::IntNeg => int::int_neg(receiver, args),
+            NM::IntPos => int::int_pos(receiver, args),
+            NM::IntLt => int::int_lt(receiver, args),
+            NM::IntLe => int::int_le(receiver, args),
+            NM::IntGt => int::int_gt(receiver, args),
+            NM::IntGe => int::int_ge(receiver, args),
+            NM::IntEq => int::int_eq(receiver, args),
+            NM::IntNe => int::int_ne(receiver, args),
+            
+            // String 매직 메서드들
+            NM::StrAdd => str_builtin::str_add(receiver, args),
+            NM::StrMul => str_builtin::str_mul(receiver, args),
+            NM::StrLt => str_builtin::str_lt(receiver, args),
+            NM::StrLe => str_builtin::str_le(receiver, args),
+            NM::StrGt => str_builtin::str_gt(receiver, args),
+            NM::StrGe => str_builtin::str_ge(receiver, args),
+            NM::StrEq => str_builtin::str_eq(receiver, args),
+            NM::StrNe => str_builtin::str_ne(receiver, args),
+            
+            // String 일반 메서드들
+            NM::StrUpper => str_builtin::str_upper(receiver, args),
+            NM::StrLower => str_builtin::str_lower(receiver, args),
+            NM::StrStrip => str_builtin::str_strip(receiver, args),
+            NM::StrSplit => str_builtin::str_split(receiver, args),
+            NM::StrJoin => str_builtin::str_join(receiver, args),
+            NM::StrReplace => str_builtin::str_replace(receiver, args),
+            NM::StrStartsWith => str_builtin::str_starts_with(receiver, args),
+            NM::StrEndsWith => str_builtin::str_ends_with(receiver, args),
+            NM::StrFind => str_builtin::str_find(receiver, args),
+            NM::StrCount => str_builtin::str_count(receiver, args),
             
             // Range 메서드들
-            super::super::type_def::NativeMethod::RangeIter => range::range_iter(receiver, args),
-            super::super::type_def::NativeMethod::RangeHasNext => range::range_has_next(receiver, args),
-            super::super::type_def::NativeMethod::RangeNext => range::range_next(receiver, args),
+            NM::RangeIter => range::range_iter(receiver, args),
+            NM::RangeHasNext => range::range_has_next(receiver, args),
+            NM::RangeNext => range::range_next(receiver, args),
+
+            // List 메서드들
+            NM::ListAppend => list_methods::list_append(receiver, args),
+            NM::ListPop => list_methods::list_pop(receiver, args),
+            NM::ListExtend => list_methods::list_extend(receiver, args),
+            NM::ListInsert => list_methods::list_insert(receiver, args),
+            NM::ListRemove => list_methods::list_remove(receiver, args),
+            NM::ListReverse => list_methods::list_reverse(receiver, args),
+            NM::ListSort => list_methods::list_sort(receiver, args),
+            NM::ListClear => list_methods::list_clear(receiver, args),
+            NM::ListIndex => list_methods::list_index(receiver, args),
+            NM::ListCount => list_methods::list_count(receiver, args),
+            NM::ListIter => list_methods::list_iter(receiver, args),
+            NM::ListHasNext => list_methods::list_has_next(receiver, args),
+            NM::ListNext => list_methods::list_next(receiver, args),
+
+            // Dict 메서드들
+            NM::DictGet => dict_methods::dict_get(receiver, args),
+            NM::DictKeys => dict_methods::dict_keys(receiver, args),
+            NM::DictValues => dict_methods::dict_values(receiver, args),
+            NM::DictItems => dict_methods::dict_items(receiver, args),
+            NM::DictPop => dict_methods::dict_pop(receiver, args),
+            NM::DictUpdate => dict_methods::dict_update(receiver, args),
+            NM::DictClear => dict_methods::dict_clear(receiver, args),
+            NM::DictIter => dict_methods::dict_iter(receiver, args),
+            NM::DictHasNext => dict_methods::dict_has_next(receiver, args),
+            NM::DictNext => dict_methods::dict_next(receiver, args),
         }
     }
 

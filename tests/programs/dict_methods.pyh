@@ -1,0 +1,25 @@
+# Dict 메서드 테스트
+
+d = {"a": 1, "b": 2, "c": 3}
+print(d)
+
+# get
+v = d.get("a")
+print(v)
+
+# get with default
+v2 = d.get("z", 999)
+print(v2)
+
+# keys
+ks = d.keys()
+print(ks)
+
+# values
+vs = d.values()
+print(vs)
+
+# clear
+d.clear()
+print(d)
+

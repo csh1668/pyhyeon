@@ -1,0 +1,21 @@
+# List 메서드를 사용한 변환
+
+# 범위를 리스트로 변환
+numbers = []
+for i in range(5):
+  numbers.append(i)
+print(numbers)
+
+# 리스트 필터링 (짝수만)
+even = []
+for n in numbers:
+  if n % 2 == 0:
+    even.append(n)
+print(even)
+
+# 리스트 매핑 (제곱)
+squared = []
+for n in numbers:
+  squared.append(n * n)
+print(squared)
+

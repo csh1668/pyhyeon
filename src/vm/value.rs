@@ -73,6 +73,16 @@ impl Object {
 pub enum ObjectData {
     String(String),
 
+    /// List (mutable)
+    List {
+        items: RefCell<Vec<crate::vm::bytecode::Value>>,
+    },
+
+    /// Dict (mutable)
+    Dict {
+        map: RefCell<HashMap<DictKey, crate::vm::bytecode::Value>>,
+    },
+
     /// 사용자 정의 클래스
     UserClass {
         class_id: u16,
@@ -96,6 +106,15 @@ pub enum ObjectData {
     },
 }
 
+/// Dict key wrapper (hashable types only)
+/// TODO: __hash__ 메서드 구현 시 가능하도록 수정 필요
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub enum DictKey {
+    Int(i64),
+    String(String),
+    Bool(bool),
+}
+
 #[derive(Debug, Clone)]
 pub enum BuiltinInstanceData {
     /// Range iterator 상태
@@ -104,10 +123,18 @@ pub enum BuiltinInstanceData {
         stop: i64,
         step: i64,
     },
-    // 미래 확장:
-    // List(Vec<Value>),
-    // Dict(HashMap<Value, Value>),
-    // Set(HashSet<Value>),
+
+    /// List iterator 상태
+    ListIterator {
+        items: Rc<RefCell<Vec<crate::vm::bytecode::Value>>>,
+        current: RefCell<usize>,
+    },
+
+    /// Dict iterator 상태 (keys iterator)
+    DictIterator {
+        keys: Vec<DictKey>,
+        current: RefCell<usize>,
+    },
 }
 
 #[cfg(test)]

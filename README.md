@@ -50,6 +50,18 @@ i = 0
 while i < 5:
   print(i)
   i = i + 1
+
+# Lists
+nums = [1, 2, 3, 4, 5]
+nums.append(6)
+for n in nums:
+  print(n)
+
+# Dicts
+person = {"name": "Alice", "age": 30}
+print(person["name"])
+for key in person:
+  print(key)
 ```
 
 ## 🚀 Quick Start
@@ -87,6 +99,15 @@ cargo run --release --bin pyhyeon -- exec test.pyhb
 - `str` - String literals with `"` or `'`
   - Escape sequences: `\n`, `\t`, `\r`, `\\`, `\"`, `\'`
   - Unicode support (UTF-8)
+  - Methods: `upper()`, `lower()`, `strip()`, `split()`, `join()`, `replace()`, etc.
+- `list` - Mutable list `[1, 2, 3]`
+  - Indexing: `x[0]`, `x[-1]`
+  - Methods: `append()`, `pop()`, `extend()`, `insert()`, `remove()`, `reverse()`, `sort()`, `clear()`, `index()`, `count()`
+  - Iterable in `for` loops
+- `dict` - Mutable dictionary `{"a": 1, "b": 2}`
+  - Indexing: `d["key"]`
+  - Methods: `get()`, `keys()`, `values()`, `clear()`
+  - Iterable in `for` loops (iterates over keys)
 - `None` - Null value
 
 ### Operators
@@ -101,6 +122,7 @@ cargo run --release --bin pyhyeon -- exec test.pyhb
 ### Control Structures
 - `if` / `elif` / `else`
 - `while` loops
+- `for` loops with iterables (lists, dicts, ranges)
 - Function definitions (`def`) with recursion support
 
 ### Built-in Functions
@@ -109,9 +131,8 @@ cargo run --release --bin pyhyeon -- exec test.pyhb
 - `int(x)` - Convert to integer
 - `bool(x)` - Convert to boolean
 - `str(x)` - Convert to string
-- `len(s)` - Get string length (character count)
-
-**More features will be added soon!**
+- `len(s)` - Get length (strings, lists, dicts)
+- `range(n)` - Create a range iterator for `for` loops
 
 ## 🏗️ Architecture
 

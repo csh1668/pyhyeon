@@ -5,6 +5,7 @@
 pub mod bytecode;
 pub mod builtins;   // builtin 함수/클래스 통합 모듈
 pub mod compiler;
+pub mod disasm;     // 디스어셈블러
 pub mod machine;    // machine/ 디렉토리
 
 pub mod type_def;
@@ -18,5 +19,5 @@ pub use bytecode::{
 pub use compiler::Compiler;
 pub use machine::{Vm, VmError, VmErrorKind, VmResult, err};
 
-pub use type_def::{Arity, MethodImpl, NativeMethod, TypeDef, TypeFlags, make_string, TYPE_INT, TYPE_BOOL, TYPE_STR, TYPE_NONE, TYPE_RANGE, TYPE_USER_START};
+pub use type_def::{Arity, MethodImpl, NativeMethod, TypeDef, TypeFlags, make_string, init_builtin_types, TYPE_INT, TYPE_BOOL, TYPE_STR, TYPE_NONE, TYPE_RANGE, TYPE_USER_START};
 pub use value::{BuiltinInstanceData, Object, ObjectData};

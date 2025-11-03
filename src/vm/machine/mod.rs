@@ -142,6 +142,8 @@ impl Vm {
                     self.state = VmState::Finished;
                     return Ok(ret);
                 }
+                
+                // 반환값을 스택에 푸시
                 if let Some(v) = ret {
                     self.push(v)?;
                 }
@@ -153,7 +155,7 @@ impl Vm {
             }
             
             use instruction::ExecutionFlow;
-            match self.execute_instruction(&ins, module, io)? {
+            match self.execute_instruction(ins, module, io)? {
                 ExecutionFlow::Continue => { }
                 ExecutionFlow::WaitingForInput => {
                     self.state = VmState::WaitingForInput;
@@ -206,8 +208,16 @@ impl Vm {
         if self.frames.len() >= self.max_frames {
             return Err(err(VmErrorKind::StackOverflow, "frame overflow".into()));
         }
+        let num_locals = module.functions[func_id].num_locals as usize;
+        
+        // num_locals는 최소한 argc만큼은 있어야 함
+        let actual_locals = num_locals.max(argc);
+        
+        // ret_stack_size는 인자를 팝하기 BEFORE 저장해야 함
+        let ret_stack_size = self.stack.len() - argc;
+        
         let locals = {
-            let mut locals = vec![Value::None; module.functions[func_id].num_locals as usize];
+            let mut locals = vec![Value::None; actual_locals];
             for i in (0..argc).rev() {
                 locals[i] = self.pop()?;
             }
@@ -216,7 +226,7 @@ impl Vm {
         let frame = Frame {
             ip: 0,
             func_id,
-            ret_stack_size: self.stack.len(),
+            ret_stack_size,
             locals,
         };
         self.frames.push(frame);
@@ -224,7 +234,12 @@ impl Vm {
     }
 
     fn leave_frame(&mut self) -> VmResult<Option<Value>> {
-        let ret = self.stack.pop();
+        // 스택에 반환값이 있으면 팝, 없으면 None 반환 (암묵적 return)
+        let ret = if self.stack.len() > self.frames.last().unwrap().ret_stack_size {
+            self.stack.pop()
+        } else {
+            None
+        };
         let frame = self.frames.pop().expect("leave_frame with no frame");
         while self.stack.len() > frame.ret_stack_size {
             self.stack.pop();

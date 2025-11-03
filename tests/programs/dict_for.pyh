@@ -1,0 +1,10 @@
+# Dict와 for 루프 테스트
+
+d = {"x": 10, "y": 20, "z": 30}
+print(d)
+
+for key in d:
+  print(key)
+
+print("Done")
+
