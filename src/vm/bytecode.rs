@@ -161,127 +161,10 @@ impl Module {
     /// - `types[1]` = bool (IMMUTABLE)
     /// - `types[2]` = str (IMMUTABLE | ITERABLE, 메서드 10개)
     /// - `types[3]` = NoneType (IMMUTABLE)
-    /// - `types[4]` = range (IMMUTABLE | ITERABLE, 메서드 1개)
+    /// - `types[4]` = range (IMMUTABLE | ITERABLE, 메서드 3개)
+    ///
+    /// 타입 정의는 `vm::builtins::register_all_types()`에서 가져옵니다.
     pub fn new() -> Self {
-        use super::type_def::*;
-
-        let mut types = Vec::new();
-
-        // === Builtin 타입 초기화 ===
-
-        // TYPE_INT (0): 정수 타입
-        types.push(TypeDef::new("int", TypeFlags::IMMUTABLE));
-
-        // TYPE_BOOL (1): 불리언 타입
-        // 참고: Python에서 bool은 int의 서브타입이지만 여기서는 독립적
-        types.push(TypeDef::new("bool", TypeFlags::IMMUTABLE));
-
-        // TYPE_STR (2): 문자열 타입 (10개 메서드)
-        types.push(
-            TypeDef::new("str", TypeFlags::IMMUTABLE | TypeFlags::ITERABLE).with_methods(vec![
-                (
-                    "upper",
-                    MethodImpl::Native {
-                        func: NativeMethod::StrUpper,
-                        arity: Arity::Exact(0),
-                    },
-                ),
-                (
-                    "lower",
-                    MethodImpl::Native {
-                        func: NativeMethod::StrLower,
-                        arity: Arity::Exact(0),
-                    },
-                ),
-                (
-                    "strip",
-                    MethodImpl::Native {
-                        func: NativeMethod::StrStrip,
-                        arity: Arity::Exact(0),
-                    },
-                ),
-                (
-                    "split",
-                    MethodImpl::Native {
-                        func: NativeMethod::StrSplit,
-                        arity: Arity::Range(0, 1), // split() 또는 split(sep)
-                    },
-                ),
-                (
-                    "join",
-                    MethodImpl::Native {
-                        func: NativeMethod::StrJoin,
-                        arity: Arity::Exact(1),
-                    },
-                ),
-                (
-                    "replace",
-                    MethodImpl::Native {
-                        func: NativeMethod::StrReplace,
-                        arity: Arity::Exact(2), // replace(old, new)
-                    },
-                ),
-                (
-                    "startswith",
-                    MethodImpl::Native {
-                        func: NativeMethod::StrStartsWith,
-                        arity: Arity::Exact(1),
-                    },
-                ),
-                (
-                    "endswith",
-                    MethodImpl::Native {
-                        func: NativeMethod::StrEndsWith,
-                        arity: Arity::Exact(1),
-                    },
-                ),
-                (
-                    "find",
-                    MethodImpl::Native {
-                        func: NativeMethod::StrFind,
-                        arity: Arity::Exact(1),
-                    },
-                ),
-                (
-                    "count",
-                    MethodImpl::Native {
-                        func: NativeMethod::StrCount,
-                        arity: Arity::Exact(1),
-                    },
-                ),
-            ]),
-        );
-
-        // TYPE_NONE (3): None 타입
-        types.push(TypeDef::new("NoneType", TypeFlags::IMMUTABLE));
-
-        // TYPE_RANGE (4): range 타입 (iterator)
-        types.push(
-            TypeDef::new("range", TypeFlags::IMMUTABLE | TypeFlags::ITERABLE).with_methods(vec![
-                (
-                    "__iter__",
-                    MethodImpl::Native {
-                        func: NativeMethod::RangeIter,
-                        arity: Arity::Exact(0),
-                    },
-                ),
-                (
-                    "__has_next__",
-                    MethodImpl::Native {
-                        func: NativeMethod::RangeHasNext,
-                        arity: Arity::Exact(0),
-                    },
-                ),
-                (
-                    "__next__",
-                    MethodImpl::Native {
-                        func: NativeMethod::RangeNext,
-                        arity: Arity::Exact(0),
-                    },
-                ),
-            ]),
-        );
-
         Module {
             consts: Vec::new(),
             string_pool: Vec::new(),
@@ -289,7 +172,7 @@ impl Module {
             symbols: Vec::new(),
             functions: Vec::new(),
             classes: Vec::new(),
-            types,
+            types: super::builtins::register_all_types(),
         }
     }
 }

@@ -1,0 +1,302 @@
+// machine 모듈 - VM 실행 엔진
+//
+// 이 모듈은 바이트코드를 실행하는 VM을 구현합니다.
+
+use crate::vm::bytecode::{ClassDef, Instruction as I, Module, Value};
+use crate::vm::type_def::{BuiltinClassType, TYPE_RANGE, TYPE_STR, TYPE_USER_START};
+use crate::vm::value::{BuiltinInstanceData, Object, ObjectData};
+use crate::runtime_io::RuntimeIo;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+// 서브모듈
+mod instruction;
+mod method_dispatch;
+
+#[cfg(test)]
+mod tests;
+
+// ========== 타입 정의 ==========
+
+#[derive(Debug)]
+pub enum VmErrorKind {
+    TypeError(&'static str),
+    ZeroDivision,
+    ArityError { expected: usize, got: usize },
+    UndefinedGlobal(u16),
+    StackUnderflow,
+    StackOverflow,
+}
+
+#[derive(Debug)]
+pub struct VmError {
+    pub kind: VmErrorKind,
+    pub message: String,
+}
+
+pub type VmResult<T> = Result<T, VmError>;
+
+/// VM execution state
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VmState {
+    Running,
+    WaitingForInput,
+    Finished,
+    Error,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Frame {
+    pub ip: usize,
+    pub func_id: usize,
+    pub ret_stack_size: usize,
+    pub locals: Vec<Value>,
+}
+
+pub struct Vm {
+    pub stack: Vec<Value>,
+    pub frames: Vec<Frame>,
+    pub max_stack: usize,
+    pub max_frames: usize,
+    pub state: VmState,
+}
+
+// ========== 유틸리티 함수 ==========
+
+/// VmError 생성 헬퍼 함수
+pub fn err(kind: VmErrorKind, message: String) -> VmError {
+    VmError { kind, message }
+}
+
+// 유틸리티 함수들은 vm::utils로 이동
+use super::utils::{eq_vals, display_value};
+
+/// IP를 상대적으로 점프
+fn jump_rel(ip: &mut usize, off: i32) {
+    if off >= 0 {
+        *ip = ip.wrapping_add(off as usize);
+    } else {
+        *ip = ip.wrapping_sub((-off) as usize);
+    }
+}
+
+// ========== VM 구현 ==========
+
+impl Vm {
+    pub fn new() -> Self {
+        Self {
+            stack: Vec::with_capacity(128),
+            frames: Vec::with_capacity(32),
+            max_stack: 1024,
+            max_frames: 256,
+            state: VmState::Running,
+        }
+    }
+
+    pub fn get_state(&self) -> VmState {
+        self.state.clone()
+    }
+
+    pub fn resume(&mut self) {
+        if self.state == VmState::WaitingForInput {
+            self.state = VmState::Running;
+        }
+    }
+
+    pub fn is_waiting_for_input(&self) -> bool {
+        self.state == VmState::WaitingForInput
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.state == VmState::Finished || self.frames.is_empty()
+    }
+
+    pub fn run(&mut self, module: &mut Module) -> VmResult<Option<Value>> {
+        let mut stdio = crate::runtime_io::StdIo;
+        self.run_with_io(module, &mut stdio)
+    }
+
+    pub fn run_with_io<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<Option<Value>> {
+        if module.functions.is_empty() {
+            return Ok(None);
+        }
+        if self.frames.is_empty() {
+            self.enter_func(module, 0, 0)?;
+        }
+        loop {
+            let (func_id, ip, code_len) = {
+                let f = match self.frames.last() {
+                    Some(f) => f,
+                    None => break,
+                };
+                let func = &module.functions[f.func_id];
+                (f.func_id, f.ip, func.code.len())
+            };
+            if ip >= code_len {
+                let ret = self.leave_frame()?;
+                if self.frames.is_empty() {
+                    self.state = VmState::Finished;
+                    return Ok(ret);
+                }
+                if let Some(v) = ret {
+                    self.push(v)?;
+                }
+                continue;
+            }
+            let ins = &module.functions[func_id].code[ip].clone();
+            if let Some(f) = self.frames.last_mut() {
+                f.ip = ip + 1;
+            }
+            
+            use instruction::ExecutionFlow;
+            match self.execute_instruction(&ins, module, io)? {
+                ExecutionFlow::Continue => { }
+                ExecutionFlow::WaitingForInput => {
+                    self.state = VmState::WaitingForInput;
+                    return Ok(None);
+                }
+                ExecutionFlow::Return(ret) => {
+                    self.state = VmState::Finished;
+                    return Ok(ret);
+                }
+            }
+        }
+        self.state = VmState::Finished;
+        Ok(None)
+    }
+
+    // ========== 스택 연산 ==========
+
+    fn push(&mut self, v: Value) -> VmResult<()> {
+        if self.stack.len() >= self.max_stack {
+            return Err(err(VmErrorKind::StackOverflow, "stack overflow".into()));
+        }
+        self.stack.push(v);
+        Ok(())
+    }
+
+    fn pop(&mut self) -> VmResult<Value> {
+        self.stack
+            .pop()
+            .ok_or_else(|| err(VmErrorKind::StackUnderflow, "stack underflow".into()))
+    }
+
+    fn pop_int(&mut self) -> VmResult<i64> {
+        match self.pop()? {
+            Value::Int(i) => Ok(i),
+            _ => Err(err(VmErrorKind::TypeError("int"), "expected Int".into())),
+        }
+    }
+
+    fn pop_bool(&mut self) -> VmResult<bool> {
+        match self.pop()? {
+            Value::Bool(b) => Ok(b),
+            Value::Int(i) => Ok(i != 0),
+            _ => Err(err(VmErrorKind::TypeError("bool"), "expected Bool".into())),
+        }
+    }
+
+    // ========== 프레임 관리 ==========
+
+    fn enter_func(&mut self, module: &Module, func_id: usize, argc: usize) -> VmResult<()> {
+        if self.frames.len() >= self.max_frames {
+            return Err(err(VmErrorKind::StackOverflow, "frame overflow".into()));
+        }
+        let locals = {
+            let mut locals = vec![Value::None; module.functions[func_id].num_locals as usize];
+            for i in (0..argc).rev() {
+                locals[i] = self.pop()?;
+            }
+            locals
+        };
+        let frame = Frame {
+            ip: 0,
+            func_id,
+            ret_stack_size: self.stack.len(),
+            locals,
+        };
+        self.frames.push(frame);
+        Ok(())
+    }
+
+    fn leave_frame(&mut self) -> VmResult<Option<Value>> {
+        let ret = self.stack.pop();
+        let frame = self.frames.pop().expect("leave_frame with no frame");
+        while self.stack.len() > frame.ret_stack_size {
+            self.stack.pop();
+        }
+        Ok(ret)
+    }
+
+    fn get_local(&self, ix: u16) -> VmResult<Value> {
+        let f = self
+            .frames
+            .last()
+            .ok_or_else(|| err(VmErrorKind::StackUnderflow, "no frame".into()))?;
+        let v = f.locals.get(ix as usize).ok_or_else(|| {
+            err(
+                VmErrorKind::UndefinedGlobal(ix),
+                format!("invalid local index {}", ix),
+            )
+        })?;
+        Ok(v.clone())
+    }
+
+    fn set_local(&mut self, ix: u16, v: Value) -> VmResult<()> {
+        let f = self
+            .frames
+            .last_mut()
+            .ok_or_else(|| err(VmErrorKind::StackUnderflow, "no frame".into()))?;
+        let slot = f.locals.get_mut(ix as usize).ok_or_else(|| {
+            err(
+                VmErrorKind::UndefinedGlobal(ix),
+                format!("invalid local index {}", ix),
+            )
+        })?;
+        *slot = v;
+        Ok(())
+    }
+
+    fn add_ip_rel(&mut self, off: i32) {
+        if let Some(f) = self.frames.last_mut() {
+            jump_rel(&mut f.ip, off);
+        }
+    }
+
+    // ========== Object 생성 헬퍼들 ==========
+
+    fn make_string(&self, s: String) -> Value {
+        use crate::vm::type_def::make_string as make_str;
+        make_str(s)
+    }
+
+    fn make_user_class(&self, class_def: &ClassDef) -> Value {
+        let class_id = class_def.methods.get("__class_id__").copied().unwrap_or(0);
+        Value::Object(Rc::new(Object::new(
+            TYPE_USER_START + class_id,
+            ObjectData::UserClass {
+                class_id,
+                methods: class_def.methods.clone(),
+            },
+        )))
+    }
+
+    fn make_user_instance(&self, class_id: u16) -> Value {
+        Value::Object(Rc::new(Object::new_with_attrs(
+            TYPE_USER_START + class_id,
+            ObjectData::UserInstance { class_id },
+        )))
+    }
+
+    fn make_builtin_class(&self, class_type: BuiltinClassType) -> Value {
+        Value::Object(Rc::new(Object::new(
+            TYPE_RANGE,
+            ObjectData::BuiltinClass { class_type },
+        )))
+    }
+
+}

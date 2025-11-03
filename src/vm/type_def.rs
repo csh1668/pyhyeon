@@ -165,6 +165,22 @@ pub const TYPE_NONE: u16 = 3;
 pub const TYPE_RANGE: u16 = 4;
 pub const TYPE_USER_START: u16 = 100;
 
+// ========== 유틸리티 함수 ==========
+
+/// String 객체 생성 헬퍼
+///
+/// 문자열을 Object로 래핑하여 Value를 생성합니다.
+pub fn make_string(s: String) -> crate::vm::bytecode::Value {
+    use crate::vm::value::{Object, ObjectData};
+    use crate::vm::bytecode::Value;
+    use std::rc::Rc;
+    
+    Value::Object(Rc::new(Object::new(
+        TYPE_STR,
+        ObjectData::String(s),
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

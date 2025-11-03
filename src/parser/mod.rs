@@ -11,6 +11,21 @@ pub use chumsky::span::SimpleSpan;
 
 type RichTokenError<'a> = Rich<'a, Token>;
 
+// Release 빌드에서만 boxed를 적용하여 빌드 속도 개선
+#[cfg(not(debug_assertions))]
+macro_rules! maybe_boxed {
+    ($parser:expr) => {
+        $parser.boxed()
+    };
+}
+
+#[cfg(debug_assertions)]
+macro_rules! maybe_boxed {
+    ($parser:expr) => {
+        $parser
+    };
+}
+
 #[derive(Debug, Clone)]
 enum PostfixOp {
     Attr(String),
@@ -22,7 +37,7 @@ pub fn expr_parser<'tokens, I>()
 where
     I: ValueInput<'tokens, Token = Token, Span = SimpleSpan> + 'tokens,
 {
-    recursive(|expr| {
+    let parser = recursive(|expr| {
         let ident = select! { Token::Identifier(s) => s }.labelled("identifier");
 
         // Primary: literals, variables, parenthesized expressions
@@ -97,7 +112,7 @@ where
             (op, s.into_range())
         });
 
-        let unary =
+        let unary = maybe_boxed!(
             op_unary
                 .repeated()
                 .foldr(atom, |(op, op_span): (UnaryOp, Span), right: ExprS| {
@@ -109,10 +124,11 @@ where
                         },
                         span,
                     )
-                });
+                })
+        );
 
         let op = |t| just(t).ignored();
-        let product = unary.clone().foldl(
+        let product = maybe_boxed!(unary.clone().foldl(
             choice((
                 op(Token::Star).to(BinaryOp::Multiply),
                 op(Token::SlashSlash).to(BinaryOp::FloorDivide),
@@ -131,8 +147,8 @@ where
                     span,
                 )
             },
-        );
-        let sum = product.clone().foldl(
+        ));
+        let sum = maybe_boxed!(product.clone().foldl(
             choice((
                 op(Token::Plus).to(BinaryOp::Add),
                 op(Token::Minus).to(BinaryOp::Subtract),
@@ -150,8 +166,8 @@ where
                     span,
                 )
             },
-        );
-        let comparison = sum.clone().foldl(
+        ));
+        let comparison = maybe_boxed!(sum.clone().foldl(
             choice((
                 op(Token::Less).to(BinaryOp::Less),
                 op(Token::LessEqual).to(BinaryOp::LessEqual),
@@ -173,8 +189,8 @@ where
                     span,
                 )
             },
-        );
-        let and_expr = comparison.clone().foldl(
+        ));
+        let and_expr = maybe_boxed!(comparison.clone().foldl(
             op(Token::And).to(BinaryOp::And).then(comparison).repeated(),
             |left: ExprS, (op, right): (BinaryOp, ExprS)| {
                 let span = left.1.start..right.1.end;
@@ -187,8 +203,8 @@ where
                     span,
                 )
             },
-        );
-        let or_expr = and_expr.clone().foldl(
+        ));
+        let or_expr = maybe_boxed!(and_expr.clone().foldl(
             op(Token::Or).to(BinaryOp::Or).then(and_expr).repeated(),
             |left: ExprS, (op, right): (BinaryOp, ExprS)| {
                 let span = left.1.start..right.1.end;
@@ -201,11 +217,12 @@ where
                     span,
                 )
             },
-        );
+        ));
 
         or_expr.labelled("expression")
-    })
-    .boxed()
+    });
+    
+    maybe_boxed!(parser)
 }
 
 pub fn stmt_parser<'tokens, I>()
@@ -215,7 +232,7 @@ where
 {
     let expr = expr_parser().boxed();
 
-    recursive(|stmt| {
+    let parser = recursive(|stmt| {
         let ident = select! { Token::Identifier(s) => s }.labelled("identifier");
 
         // Line end (either newline or end of input)
@@ -398,8 +415,9 @@ where
                     .or(just(Token::Dedent).ignored())
                     .or(end().ignored()),
             ))
-    })
-    .boxed()
+    });
+    
+    maybe_boxed!(parser)
 }
 
 pub fn program_parser<'tokens, I>()
@@ -410,13 +428,14 @@ where
     let line = stmt_parser().boxed();
     let blanks = just(Token::Newline).ignored().repeated();
 
-    blanks
+    let parser = blanks
         .clone()
         .ignore_then(line.clone().repeated().collect::<Vec<Vec<StmtS>>>())
         .map(|lines| lines.into_iter().flatten().collect::<Vec<StmtS>>())
         .then_ignore(blanks)
-        .then_ignore(end())
-        .boxed()
+        .then_ignore(end());
+    
+    maybe_boxed!(parser)
 }
 
 #[cfg(test)]

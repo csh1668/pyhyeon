@@ -1,0 +1,223 @@
+use super::super::bytecode::Value;
+use super::super::type_def::{Arity, MethodImpl, NativeMethod, TypeDef, TypeFlags};
+use super::super::value::ObjectData;
+use super::super::{VmError, VmErrorKind, VmResult, err};
+use super::{display_value, make_string, TYPE_STR};
+
+/// str() builtin 함수
+pub fn call(args: Vec<Value>) -> VmResult<Value> {
+    // 인자 개수 검증
+    if args.len() != 1 {
+        return Err(err(
+            VmErrorKind::ArityError { expected: 1, got: args.len() },
+            format!("str() takes exactly 1 argument ({} given)", args.len())
+        ));
+    }
+
+    let v = &args[0];
+    Ok(make_string(display_value(v)))
+}
+
+// ========== String 메서드 구현들 ==========
+
+/// Value에서 String 데이터 추출
+fn expect_string(v: &Value) -> VmResult<&str> {
+    match v {
+        Value::Object(obj) => match &obj.data {
+            ObjectData::String(s) => Ok(s.as_str()),
+            _ => Err(err(VmErrorKind::TypeError("str"), "expected string object".into())),
+        },
+        _ => Err(err(VmErrorKind::TypeError("str"), "expected String".into())),
+    }
+}
+
+pub fn str_upper(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    if !args.is_empty() {
+        return Err(err(
+            VmErrorKind::ArityError { expected: 0, got: args.len() },
+            format!("str.upper() takes 0 arguments but {} given", args.len())
+        ));
+    }
+    let s = expect_string(receiver)?;
+    Ok(make_string(s.to_uppercase()))
+}
+
+pub fn str_lower(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    if !args.is_empty() {
+        return Err(err(
+            VmErrorKind::ArityError { expected: 0, got: args.len() },
+            format!("str.lower() takes 0 arguments but {} given", args.len())
+        ));
+    }
+    let s = expect_string(receiver)?;
+    Ok(make_string(s.to_lowercase()))
+}
+
+pub fn str_strip(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    if !args.is_empty() {
+        return Err(err(
+            VmErrorKind::ArityError { expected: 0, got: args.len() },
+            format!("str.strip() takes 0 arguments but {} given", args.len())
+        ));
+    }
+    let s = expect_string(receiver)?;
+    Ok(make_string(s.trim().to_string()))
+}
+
+pub fn str_split(_receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
+    // split()은 리스트를 반환해야 하므로 list 타입이 필요
+    Err(err(
+        VmErrorKind::TypeError("str.split"),
+        "str.split() not implemented yet (requires list type)".into()
+    ))
+}
+
+pub fn str_join(_receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
+    // join()은 리스트를 인자로 받으므로 list 타입이 필요
+    Err(err(
+        VmErrorKind::TypeError("str.join"),
+        "str.join() not implemented yet (requires list type)".into()
+    ))
+}
+
+pub fn str_replace(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    if args.len() != 2 {
+        return Err(err(
+            VmErrorKind::ArityError { expected: 2, got: args.len() },
+            format!("str.replace() takes 2 arguments but {} given", args.len())
+        ));
+    }
+    let s = expect_string(receiver)?;
+    let old = expect_string(&args[0])?;
+    let new = expect_string(&args[1])?;
+    Ok(make_string(s.replace(old, new)))
+}
+
+pub fn str_starts_with(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    if args.len() != 1 {
+        return Err(err(
+            VmErrorKind::ArityError { expected: 1, got: args.len() },
+            format!("str.startswith() takes 1 argument but {} given", args.len())
+        ));
+    }
+    let s = expect_string(receiver)?;
+    let prefix = expect_string(&args[0])?;
+    Ok(Value::Bool(s.starts_with(prefix)))
+}
+
+pub fn str_ends_with(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    if args.len() != 1 {
+        return Err(err(
+            VmErrorKind::ArityError { expected: 1, got: args.len() },
+            format!("str.endswith() takes 1 argument but {} given", args.len())
+        ));
+    }
+    let s = expect_string(receiver)?;
+    let suffix = expect_string(&args[0])?;
+    Ok(Value::Bool(s.ends_with(suffix)))
+}
+
+pub fn str_find(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    if args.len() != 1 {
+        return Err(err(
+            VmErrorKind::ArityError { expected: 1, got: args.len() },
+            format!("str.find() takes 1 argument but {} given", args.len())
+        ));
+    }
+    let s = expect_string(receiver)?;
+    let substr = expect_string(&args[0])?;
+    match s.find(substr) {
+        Some(pos) => Ok(Value::Int(pos as i64)),
+        None => Ok(Value::Int(-1)),
+    }
+}
+
+pub fn str_count(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    if args.len() != 1 {
+        return Err(err(
+            VmErrorKind::ArityError { expected: 1, got: args.len() },
+            format!("str.count() takes 1 argument but {} given", args.len())
+        ));
+    }
+    let s = expect_string(receiver)?;
+    let substr = expect_string(&args[0])?;
+    let count = s.matches(substr).count();
+    Ok(Value::Int(count as i64))
+}
+
+/// str 타입 정의 등록
+pub fn register_type() -> TypeDef {
+    TypeDef::new("str", TypeFlags::IMMUTABLE | TypeFlags::ITERABLE).with_methods(vec![
+        (
+            "upper",
+            MethodImpl::Native {
+                func: NativeMethod::StrUpper,
+                arity: Arity::Exact(0),
+            },
+        ),
+        (
+            "lower",
+            MethodImpl::Native {
+                func: NativeMethod::StrLower,
+                arity: Arity::Exact(0),
+            },
+        ),
+        (
+            "strip",
+            MethodImpl::Native {
+                func: NativeMethod::StrStrip,
+                arity: Arity::Exact(0),
+            },
+        ),
+        (
+            "split",
+            MethodImpl::Native {
+                func: NativeMethod::StrSplit,
+                arity: Arity::Range(0, 1),
+            },
+        ),
+        (
+            "join",
+            MethodImpl::Native {
+                func: NativeMethod::StrJoin,
+                arity: Arity::Exact(1),
+            },
+        ),
+        (
+            "replace",
+            MethodImpl::Native {
+                func: NativeMethod::StrReplace,
+                arity: Arity::Exact(2),
+            },
+        ),
+        (
+            "startswith",
+            MethodImpl::Native {
+                func: NativeMethod::StrStartsWith,
+                arity: Arity::Exact(1),
+            },
+        ),
+        (
+            "endswith",
+            MethodImpl::Native {
+                func: NativeMethod::StrEndsWith,
+                arity: Arity::Exact(1),
+            },
+        ),
+        (
+            "find",
+            MethodImpl::Native {
+                func: NativeMethod::StrFind,
+                arity: Arity::Exact(1),
+            },
+        ),
+        (
+            "count",
+            MethodImpl::Native {
+                func: NativeMethod::StrCount,
+                arity: Arity::Exact(1),
+            },
+        ),
+    ])
+}
+
