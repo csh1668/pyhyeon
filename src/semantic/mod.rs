@@ -117,13 +117,17 @@ fn analyze_stmt_module(
             }
             Ok(())
         }
-        Stmt::For { var, iterable, body } => {
+        Stmt::For {
+            var,
+            iterable,
+            body,
+        } => {
             // iterable 표현식 분석
             analyze_expr_module(iterable, scopes, ctx)?;
-            
+
             // 루프 변수를 현재 스코프에 정의
             scopes.define(var.clone());
-            
+
             // body 분석
             for s in body {
                 analyze_stmt_module(s, scopes, ctx)?;
@@ -380,20 +384,24 @@ fn analyze_stmt_function(
             }
             Ok(())
         }
-        Stmt::For { var, iterable, body } => {
+        Stmt::For {
+            var,
+            iterable,
+            body,
+        } => {
             // iterable 표현식 분석
             analyze_expr_function(iterable, scopes, ctx, locals, assigned)?;
-            
+
             // 루프 변수를 스코프에 정의
             if !scopes.is_defined(var) {
                 scopes.define(var.clone());
             }
-            
+
             // 루프 변수가 할당됨을 표시
             if locals.contains(var) {
                 assigned.insert(var.clone());
             }
-            
+
             // body 분석
             for s in body {
                 analyze_stmt_function(s, scopes, ctx, locals, assigned)?;

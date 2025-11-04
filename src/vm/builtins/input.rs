@@ -7,8 +7,11 @@ use crate::runtime_io::RuntimeIo;
 pub fn call<IO: RuntimeIo>(args: Vec<Value>, io: &mut IO) -> VmResult<Value> {
     if args.len() > 1 {
         return Err(err(
-            VmErrorKind::ArityError { expected: 1, got: args.len() },
-            format!("input() takes at most 1 argument ({} given)", args.len())
+            VmErrorKind::ArityError {
+                expected: 1,
+                got: args.len(),
+            },
+            format!("input() takes at most 1 argument ({} given)", args.len()),
         ));
     }
 
@@ -22,14 +25,20 @@ pub fn call<IO: RuntimeIo>(args: Vec<Value>, io: &mut IO) -> VmResult<Value> {
                 } else {
                     return Err(err(
                         VmErrorKind::TypeError("input"),
-                        format!("input() argument must be str, not '{}'", super::type_name(prompt_val))
+                        format!(
+                            "input() argument must be str, not '{}'",
+                            super::type_name(prompt_val)
+                        ),
                     ));
                 }
             }
             _ => {
                 return Err(err(
                     VmErrorKind::TypeError("input"),
-                    format!("input() argument must be str, not '{}'", super::type_name(prompt_val))
+                    format!(
+                        "input() argument must be str, not '{}'",
+                        super::type_name(prompt_val)
+                    ),
                 ));
             }
         }
@@ -42,9 +51,8 @@ pub fn call<IO: RuntimeIo>(args: Vec<Value>, io: &mut IO) -> VmResult<Value> {
         ReadResult::Ok(line) => Ok(make_string(line)),
         ReadResult::WaitingForInput => Err(err(
             VmErrorKind::TypeError("input"),
-            "Waiting for input".into()
+            "Waiting for input".into(),
         )),
         ReadResult::Error(e) => Err(err(VmErrorKind::TypeError("io"), e)),
     }
 }
-

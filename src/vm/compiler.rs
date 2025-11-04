@@ -11,7 +11,6 @@ pub struct Compiler {
     symbols: std::collections::HashMap<String, u16>,
 }
 
-
 impl Compiler {
     pub fn new() -> Self {
         Self {
@@ -143,7 +142,11 @@ impl Compiler {
                 let end = fun.code.len() as i32;
                 patch_rel(&mut fun.code[j_break], end - (j_break as i32 + 1));
             }
-            Stmt::For { var, iterable, body } => {
+            Stmt::For {
+                var,
+                iterable,
+                body,
+            } => {
                 // for문 desugaring:
                 // for var in iterable:
                 //     body
@@ -152,45 +155,45 @@ impl Compiler {
                 // while __iter_temp__.__has_next__():
                 //     var = __iter_temp__.__next__()
                 //     body
-                
+
                 // 1. iterable.__iter__() 호출하여 iterator 생성
                 self.emit_expr(iterable, fun);
                 let iter_method = self.intern("__iter__");
                 fun.code.push(I::CallMethod(iter_method, 0));
-                
+
                 // 2. iterator를 임시 global 변수에 저장
                 let iter_temp_name = format!("__for_iter_{}__", fun.code.len());
                 let iter_temp_sym = self.intern(&iter_temp_name);
                 fun.code.push(I::StoreGlobal(iter_temp_sym));
-                
+
                 // 3. while 루프 시작
                 let loop_start = fun.code.len() as i32;
-                
+
                 // 4. __iter_temp__.__has_next__() 호출
                 fun.code.push(I::LoadGlobal(iter_temp_sym));
                 let has_next_method = self.intern("__has_next__");
                 fun.code.push(I::CallMethod(has_next_method, 0));
-                
+
                 // 5. has_next가 false면 루프 종료
                 let j_break = fun.code.len();
                 fun.code.push(I::JumpIfFalse(0));
-                
+
                 // 6. __iter_temp__.__next__() 호출하여 값 가져오기
                 fun.code.push(I::LoadGlobal(iter_temp_sym));
                 let next_method = self.intern("__next__");
                 fun.code.push(I::CallMethod(next_method, 0));
-                
+
                 // 7. 루프 변수에 할당
                 let var_sym = self.sym_id(var);
                 fun.code.push(I::StoreGlobal(var_sym));
-                
+
                 // 8. body 실행
                 self.emit_block(body, fun);
-                
+
                 // 9. 루프 시작으로 jump
                 let cur = fun.code.len() as i32;
                 fun.code.push(I::Jump(loop_start - (cur + 1)));
-                
+
                 // 10. break 지점 패치
                 let end = fun.code.len() as i32;
                 patch_rel(&mut fun.code[j_break], end - (j_break as i32 + 1));
@@ -228,7 +231,7 @@ impl Compiler {
                     methods: HashMap::new(), // 나중에 업데이트
                 };
                 self.module.classes.push(class_def);
-                
+
                 // 각 메서드를 함수로 컴파일
                 let mut method_map = HashMap::new();
                 for method in methods {
@@ -279,12 +282,12 @@ impl Compiler {
         for s in &method.body {
             self.emit_stmt_with_locals(s, &mut f, &local_map);
         }
-        
+
         // __init__ 메서드는 자동으로 self를 반환
         if method.name == "__init__" {
             f.code.push(I::LoadLocal(0)); // self는 항상 첫 번째 로컬 변수
         }
-        
+
         f.code.push(I::Return);
         self.module.functions[fid] = f;
 
@@ -590,38 +593,42 @@ impl Compiler {
                 let end = fun.code.len() as i32;
                 patch_rel(&mut fun.code[j_break], end - (j_break as i32 + 1));
             }
-            Stmt::For { var, iterable, body } => {
+            Stmt::For {
+                var,
+                iterable,
+                body,
+            } => {
                 // for문 desugaring (locals 버전)
-                
+
                 // 1. iterable.__iter__() 호출하여 iterator 생성
                 self.emit_expr_with_locals(iterable, fun, locals);
                 let iter_method = self.intern("__iter__");
                 fun.code.push(I::CallMethod(iter_method, 0));
-                
+
                 // 2. iterator를 임시 변수에 저장 (local 또는 global)
                 let iter_temp_name = format!("__for_iter_{}__", fun.code.len());
                 let iter_temp_sym = self.intern(&iter_temp_name);
-                
+
                 // 임시 변수는 항상 global로 저장 (locals map에 없음)
                 fun.code.push(I::StoreGlobal(iter_temp_sym));
-                
+
                 // 3. while 루프 시작
                 let loop_start = fun.code.len() as i32;
-                
+
                 // 4. __iter_temp__.__has_next__() 호출
                 fun.code.push(I::LoadGlobal(iter_temp_sym));
                 let has_next_method = self.intern("__has_next__");
                 fun.code.push(I::CallMethod(has_next_method, 0));
-                
+
                 // 5. has_next가 false면 루프 종료
                 let j_break = fun.code.len();
                 fun.code.push(I::JumpIfFalse(0));
-                
+
                 // 6. __iter_temp__.__next__() 호출하여 값 가져오기
                 fun.code.push(I::LoadGlobal(iter_temp_sym));
                 let next_method = self.intern("__next__");
                 fun.code.push(I::CallMethod(next_method, 0));
-                
+
                 // 7. 루프 변수에 할당 (local 또는 global)
                 if let Some(ix) = locals.get(var) {
                     fun.code.push(I::StoreLocal(*ix));
@@ -629,16 +636,16 @@ impl Compiler {
                     let var_sym = self.sym_id(var);
                     fun.code.push(I::StoreGlobal(var_sym));
                 }
-                
+
                 // 8. body 실행
                 for s in body {
                     self.emit_stmt_with_locals(s, fun, locals);
                 }
-                
+
                 // 9. 루프 시작으로 jump
                 let cur = fun.code.len() as i32;
                 fun.code.push(I::Jump(loop_start - (cur + 1)));
-                
+
                 // 10. break 지점 패치
                 let end = fun.code.len() as i32;
                 patch_rel(&mut fun.code[j_break], end - (j_break as i32 + 1));

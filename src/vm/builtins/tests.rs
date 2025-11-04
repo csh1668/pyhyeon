@@ -71,38 +71,71 @@ fn test_int_from_none() {
 #[test]
 fn test_int_arity_zero() {
     let err = int::call(vec![]).unwrap_err();
-    assert!(matches!(err.kind, VmErrorKind::ArityError { expected: 1, got: 0 }));
+    assert!(matches!(
+        err.kind,
+        VmErrorKind::ArityError {
+            expected: 1,
+            got: 0
+        }
+    ));
 }
 
 #[test]
 fn test_int_arity_two() {
     let err = int::call(vec![Value::Int(1), Value::Int(2)]).unwrap_err();
-    assert!(matches!(err.kind, VmErrorKind::ArityError { expected: 1, got: 2 }));
+    assert!(matches!(
+        err.kind,
+        VmErrorKind::ArityError {
+            expected: 1,
+            got: 2
+        }
+    ));
 }
 
 // ========== bool() 테스트 ==========
 
 #[test]
 fn test_bool_from_bool() {
-    assert_eq!(bool_builtin::call(vec![Value::Bool(true)]).unwrap(), Value::Bool(true));
-    assert_eq!(bool_builtin::call(vec![Value::Bool(false)]).unwrap(), Value::Bool(false));
+    assert_eq!(
+        bool_builtin::call(vec![Value::Bool(true)]).unwrap(),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        bool_builtin::call(vec![Value::Bool(false)]).unwrap(),
+        Value::Bool(false)
+    );
 }
 
 #[test]
 fn test_bool_from_int_zero() {
-    assert_eq!(bool_builtin::call(vec![Value::Int(0)]).unwrap(), Value::Bool(false));
+    assert_eq!(
+        bool_builtin::call(vec![Value::Int(0)]).unwrap(),
+        Value::Bool(false)
+    );
 }
 
 #[test]
 fn test_bool_from_int_nonzero() {
-    assert_eq!(bool_builtin::call(vec![Value::Int(1)]).unwrap(), Value::Bool(true));
-    assert_eq!(bool_builtin::call(vec![Value::Int(-5)]).unwrap(), Value::Bool(true));
-    assert_eq!(bool_builtin::call(vec![Value::Int(100)]).unwrap(), Value::Bool(true));
+    assert_eq!(
+        bool_builtin::call(vec![Value::Int(1)]).unwrap(),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        bool_builtin::call(vec![Value::Int(-5)]).unwrap(),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        bool_builtin::call(vec![Value::Int(100)]).unwrap(),
+        Value::Bool(true)
+    );
 }
 
 #[test]
 fn test_bool_from_none() {
-    assert_eq!(bool_builtin::call(vec![Value::None]).unwrap(), Value::Bool(false));
+    assert_eq!(
+        bool_builtin::call(vec![Value::None]).unwrap(),
+        Value::Bool(false)
+    );
 }
 
 #[test]
@@ -120,13 +153,25 @@ fn test_bool_from_string_nonempty() {
 #[test]
 fn test_bool_arity_zero() {
     let err = bool_builtin::call(vec![]).unwrap_err();
-    assert!(matches!(err.kind, VmErrorKind::ArityError { expected: 1, got: 0 }));
+    assert!(matches!(
+        err.kind,
+        VmErrorKind::ArityError {
+            expected: 1,
+            got: 0
+        }
+    ));
 }
 
 #[test]
 fn test_bool_arity_two() {
     let err = bool_builtin::call(vec![Value::Bool(true), Value::Bool(false)]).unwrap_err();
-    assert!(matches!(err.kind, VmErrorKind::ArityError { expected: 1, got: 2 }));
+    assert!(matches!(
+        err.kind,
+        VmErrorKind::ArityError {
+            expected: 1,
+            got: 2
+        }
+    ));
 }
 
 // ========== str() 테스트 ==========
@@ -176,7 +221,13 @@ fn test_str_from_none() {
 #[test]
 fn test_str_arity_zero() {
     let err = str_builtin::call(vec![]).unwrap_err();
-    assert!(matches!(err.kind, VmErrorKind::ArityError { expected: 1, got: 0 }));
+    assert!(matches!(
+        err.kind,
+        VmErrorKind::ArityError {
+            expected: 1,
+            got: 0
+        }
+    ));
 }
 
 // ========== len() 테스트 ==========
@@ -217,14 +268,26 @@ fn test_len_none_error() {
 #[test]
 fn test_len_arity_zero() {
     let err = len::call(vec![]).unwrap_err();
-    assert!(matches!(err.kind, VmErrorKind::ArityError { expected: 1, got: 0 }));
+    assert!(matches!(
+        err.kind,
+        VmErrorKind::ArityError {
+            expected: 1,
+            got: 0
+        }
+    ));
 }
 
 #[test]
 fn test_len_arity_two() {
     let args = vec![make_string("a".into()), make_string("b".into())];
     let err = len::call(args).unwrap_err();
-    assert!(matches!(err.kind, VmErrorKind::ArityError { expected: 1, got: 2 }));
+    assert!(matches!(
+        err.kind,
+        VmErrorKind::ArityError {
+            expected: 1,
+            got: 2
+        }
+    ));
 }
 
 // ========== range() 테스트 ==========
@@ -234,7 +297,10 @@ fn test_range_one_arg() {
     let result = range::create_range(vec![Value::Int(5)]).unwrap();
     // range 객체가 생성되었는지 확인
     if let Value::Object(obj) = result {
-        assert!(matches!(obj.data, crate::vm::value::ObjectData::BuiltinInstance { .. }));
+        assert!(matches!(
+            obj.data,
+            crate::vm::value::ObjectData::BuiltinInstance { .. }
+        ));
     } else {
         panic!("Expected range object");
     }
@@ -244,7 +310,10 @@ fn test_range_one_arg() {
 fn test_range_two_args() {
     let result = range::create_range(vec![Value::Int(2), Value::Int(5)]).unwrap();
     if let Value::Object(obj) = result {
-        assert!(matches!(obj.data, crate::vm::value::ObjectData::BuiltinInstance { .. }));
+        assert!(matches!(
+            obj.data,
+            crate::vm::value::ObjectData::BuiltinInstance { .. }
+        ));
     } else {
         panic!("Expected range object");
     }
@@ -254,7 +323,10 @@ fn test_range_two_args() {
 fn test_range_three_args() {
     let result = range::create_range(vec![Value::Int(0), Value::Int(10), Value::Int(2)]).unwrap();
     if let Value::Object(obj) = result {
-        assert!(matches!(obj.data, crate::vm::value::ObjectData::BuiltinInstance { .. }));
+        assert!(matches!(
+            obj.data,
+            crate::vm::value::ObjectData::BuiltinInstance { .. }
+        ));
     } else {
         panic!("Expected range object");
     }
@@ -354,11 +426,7 @@ fn test_print_bool() {
 #[test]
 fn test_print_multiple_args() {
     let mut io = MockIo::new();
-    let result = print::call(
-        vec![Value::Int(1), Value::Bool(true), Value::None],
-        &mut io,
-    )
-    .unwrap();
+    let result = print::call(vec![Value::Int(1), Value::Bool(true), Value::None], &mut io).unwrap();
     assert_eq!(result, Value::None);
     assert_eq!(io.get_output(), vec!["1 True None"]);
 }
@@ -474,4 +542,3 @@ fn test_str_count() {
     let result = str_builtin::str_count(&receiver, vec![substr]).unwrap();
     assert_eq!(result, Value::Int(3));
 }
-

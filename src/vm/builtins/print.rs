@@ -1,5 +1,5 @@
-use super::super::bytecode::Value;
 use super::super::VmResult;
+use super::super::bytecode::Value;
 use super::display_value;
 use crate::runtime_io::RuntimeIo;
 

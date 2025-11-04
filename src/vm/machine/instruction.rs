@@ -1,6 +1,6 @@
-use crate::vm::bytecode::{Instruction as I, Module, Value};
+use super::{Vm, VmErrorKind, VmResult, eq_vals, err};
 use crate::runtime_io::RuntimeIo;
-use super::{Vm, VmResult, VmErrorKind, err, eq_vals};
+use crate::vm::bytecode::{Instruction as I, Module, Value};
 use crate::vm::type_def::{BuiltinClassType, MethodImpl};
 use crate::vm::value::ObjectData;
 
@@ -63,7 +63,9 @@ impl Vm {
             I::Call(fid, argc) => self.handle_call(*fid, *argc, module),
             I::CallBuiltin(bid, argc) => self.handle_call_builtin(*bid, *argc, module, io),
             I::CallValue(argc) => self.handle_call_value(*argc, module, io),
-            I::CallMethod(method_sym, argc) => self.handle_call_method_dispatch(*method_sym, *argc, module, io),
+            I::CallMethod(method_sym, argc) => {
+                self.handle_call_method_dispatch(*method_sym, *argc, module, io)
+            }
             I::Return => self.handle_return(),
 
             // ===== 속성 접근 =====
@@ -161,13 +163,13 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        
+
         // Fast path 1: Int + Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Int(x.wrapping_add(*y)))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Fast path 2: String + String
         if self.is_string_object(&a) && self.is_string_object(&b) {
             let s1 = self.expect_string(&a)?;
@@ -175,7 +177,7 @@ impl Vm {
             self.push(self.make_string(s1.to_string() + s2))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __add__ 메서드 조회 및 호출
         match self.lookup_method(&a, "__add__", module) {
             Ok(method_impl) => {
@@ -190,14 +192,19 @@ impl Vm {
                         // a를 다시 푸시하고, b를 인자로 사용
                         self.push(a)?;
                         self.push(b)?;
-                        
+
                         // __add__ 심볼 찾기
-                        let method_sym = module.symbols.iter().position(|s| s == "__add__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__add__ symbol not found".into()
-                            ))? as u16;
-                        
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__add__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__add__ symbol not found".into(),
+                                )
+                            })? as u16;
+
                         // CallMethod 핸들러 호출
                         self.handle_call_method(method_sym, 1, module, io)?;
                         Ok(ExecutionFlow::Continue)
@@ -206,9 +213,12 @@ impl Vm {
             }
             Err(_) => Err(err(
                 VmErrorKind::TypeError("add"),
-                format!("unsupported operand types for +: '{}' and '{}'", 
-                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
-                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                format!(
+                    "unsupported operand types for +: '{}' and '{}'",
+                    self.get_type_name(&a, module)
+                        .unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module)
+                        .unwrap_or_else(|_| "unknown".to_string())
                 ),
             )),
         }
@@ -220,13 +230,13 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        
+
         // Fast path: Int - Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Int(x.wrapping_sub(*y)))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __sub__ 메서드 조회
         match self.lookup_method(&a, "__sub__", module) {
             Ok(method_impl) => {
@@ -239,11 +249,16 @@ impl Vm {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
                         self.push(b)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__sub__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__sub__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__sub__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__sub__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 1, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -251,9 +266,12 @@ impl Vm {
             }
             Err(_) => Err(err(
                 VmErrorKind::TypeError("sub"),
-                format!("unsupported operand types for -: '{}' and '{}'",
-                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
-                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                format!(
+                    "unsupported operand types for -: '{}' and '{}'",
+                    self.get_type_name(&a, module)
+                        .unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module)
+                        .unwrap_or_else(|_| "unknown".to_string())
                 ),
             )),
         }
@@ -265,39 +283,41 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        
+
         // Fast path 1: Int * Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Int(x.wrapping_mul(*y)))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Fast path 2: String * Int
         if self.is_string_object(&a)
-            && let Value::Int(n) = b {
-                let s = self.expect_string(&a)?;
-                let result = if n < 0 {
-                    String::new()
-                } else {
-                    s.repeat(n as usize)
-                };
-                self.push(self.make_string(result))?;
-                return Ok(ExecutionFlow::Continue);
-            }
-        
+            && let Value::Int(n) = b
+        {
+            let s = self.expect_string(&a)?;
+            let result = if n < 0 {
+                String::new()
+            } else {
+                s.repeat(n as usize)
+            };
+            self.push(self.make_string(result))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
         // Fast path 3: Int * String
         if let Value::Int(n) = a
-            && self.is_string_object(&b) {
-                let s = self.expect_string(&b)?;
-                let result = if n < 0 {
-                    String::new()
-                } else {
-                    s.repeat(n as usize)
-                };
-                self.push(self.make_string(result))?;
-                return Ok(ExecutionFlow::Continue);
-            }
-        
+            && self.is_string_object(&b)
+        {
+            let s = self.expect_string(&b)?;
+            let result = if n < 0 {
+                String::new()
+            } else {
+                s.repeat(n as usize)
+            };
+            self.push(self.make_string(result))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
         // Slow path: __mul__ 메서드 조회
         match self.lookup_method(&a, "__mul__", module) {
             Ok(method_impl) => {
@@ -310,11 +330,16 @@ impl Vm {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
                         self.push(b)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__mul__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__mul__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__mul__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__mul__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 1, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -322,9 +347,12 @@ impl Vm {
             }
             Err(_) => Err(err(
                 VmErrorKind::TypeError("mul"),
-                format!("unsupported operand types for *: '{}' and '{}'",
-                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
-                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                format!(
+                    "unsupported operand types for *: '{}' and '{}'",
+                    self.get_type_name(&a, module)
+                        .unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module)
+                        .unwrap_or_else(|_| "unknown".to_string())
                 ),
             )),
         }
@@ -336,16 +364,19 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        
+
         // Fast path: Int // Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             if *y == 0 {
-                return Err(err(VmErrorKind::ZeroDivision, "integer division by zero".into()));
+                return Err(err(
+                    VmErrorKind::ZeroDivision,
+                    "integer division by zero".into(),
+                ));
             }
             self.push(Value::Int(x / y))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __floordiv__ 메서드 조회
         match self.lookup_method(&a, "__floordiv__", module) {
             Ok(method_impl) => {
@@ -358,11 +389,16 @@ impl Vm {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
                         self.push(b)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__floordiv__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__floordiv__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__floordiv__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__floordiv__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 1, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -370,9 +406,12 @@ impl Vm {
             }
             Err(_) => Err(err(
                 VmErrorKind::TypeError("floordiv"),
-                format!("unsupported operand types for //: '{}' and '{}'",
-                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
-                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                format!(
+                    "unsupported operand types for //: '{}' and '{}'",
+                    self.get_type_name(&a, module)
+                        .unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module)
+                        .unwrap_or_else(|_| "unknown".to_string())
                 ),
             )),
         }
@@ -384,16 +423,19 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        
+
         // Fast path: Int % Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             if *y == 0 {
-                return Err(err(VmErrorKind::ZeroDivision, "integer modulo by zero".into()));
+                return Err(err(
+                    VmErrorKind::ZeroDivision,
+                    "integer modulo by zero".into(),
+                ));
             }
             self.push(Value::Int(x % y))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __mod__ 메서드 조회
         match self.lookup_method(&a, "__mod__", module) {
             Ok(method_impl) => {
@@ -406,11 +448,16 @@ impl Vm {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
                         self.push(b)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__mod__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__mod__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__mod__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__mod__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 1, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -418,9 +465,12 @@ impl Vm {
             }
             Err(_) => Err(err(
                 VmErrorKind::TypeError("mod"),
-                format!("unsupported operand types for %: '{}' and '{}'",
-                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
-                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                format!(
+                    "unsupported operand types for %: '{}' and '{}'",
+                    self.get_type_name(&a, module)
+                        .unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module)
+                        .unwrap_or_else(|_| "unknown".to_string())
                 ),
             )),
         }
@@ -432,13 +482,13 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let a = self.pop()?;
-        
+
         // Fast path: -Int
         if let Value::Int(x) = a {
             self.push(Value::Int(-x))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __neg__ 메서드 조회
         match self.lookup_method(&a, "__neg__", module) {
             Ok(method_impl) => {
@@ -450,11 +500,16 @@ impl Vm {
                     None => {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__neg__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__neg__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__neg__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__neg__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 0, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -462,8 +517,10 @@ impl Vm {
             }
             Err(_) => Err(err(
                 VmErrorKind::TypeError("neg"),
-                format!("bad operand type for unary -: '{}'",
-                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string())
+                format!(
+                    "bad operand type for unary -: '{}'",
+                    self.get_type_name(&a, module)
+                        .unwrap_or_else(|_| "unknown".to_string())
                 ),
             )),
         }
@@ -475,13 +532,13 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let a = self.pop()?;
-        
+
         // Fast path: +Int
         if let Value::Int(x) = a {
             self.push(Value::Int(x))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __pos__ 메서드 조회
         match self.lookup_method(&a, "__pos__", module) {
             Ok(method_impl) => {
@@ -493,11 +550,16 @@ impl Vm {
                     None => {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__pos__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__pos__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__pos__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__pos__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 0, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -505,8 +567,10 @@ impl Vm {
             }
             Err(_) => Err(err(
                 VmErrorKind::TypeError("pos"),
-                format!("bad operand type for unary +: '{}'",
-                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string())
+                format!(
+                    "bad operand type for unary +: '{}'",
+                    self.get_type_name(&a, module)
+                        .unwrap_or_else(|_| "unknown".to_string())
                 ),
             )),
         }
@@ -520,13 +584,18 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        
+
         // Fast path: 기본 타입들은 eq_vals 사용
-        if matches!((&a, &b), (Value::Int(_), Value::Int(_)) | (Value::Bool(_), Value::Bool(_)) | (Value::None, Value::None)) {
+        if matches!(
+            (&a, &b),
+            (Value::Int(_), Value::Int(_))
+                | (Value::Bool(_), Value::Bool(_))
+                | (Value::None, Value::None)
+        ) {
             self.push(Value::Bool(eq_vals(&a, &b)))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // String 비교
         if self.is_string_object(&a) && self.is_string_object(&b) {
             let s1 = self.expect_string(&a)?;
@@ -534,7 +603,7 @@ impl Vm {
             self.push(Value::Bool(s1 == s2))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __eq__ 메서드 조회
         match self.lookup_method(&a, "__eq__", module) {
             Ok(method_impl) => {
@@ -547,11 +616,16 @@ impl Vm {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
                         self.push(b)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__eq__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__eq__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__eq__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__eq__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 1, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -571,13 +645,18 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        
+
         // Fast path: 기본 타입들은 eq_vals 사용
-        if matches!((&a, &b), (Value::Int(_), Value::Int(_)) | (Value::Bool(_), Value::Bool(_)) | (Value::None, Value::None)) {
+        if matches!(
+            (&a, &b),
+            (Value::Int(_), Value::Int(_))
+                | (Value::Bool(_), Value::Bool(_))
+                | (Value::None, Value::None)
+        ) {
             self.push(Value::Bool(!eq_vals(&a, &b)))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // String 비교
         if self.is_string_object(&a) && self.is_string_object(&b) {
             let s1 = self.expect_string(&a)?;
@@ -585,7 +664,7 @@ impl Vm {
             self.push(Value::Bool(s1 != s2))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __ne__ 메서드 조회
         match self.lookup_method(&a, "__ne__", module) {
             Ok(method_impl) => {
@@ -598,11 +677,16 @@ impl Vm {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
                         self.push(b)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__ne__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__ne__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__ne__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__ne__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 1, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -622,13 +706,13 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        
+
         // Fast path: Int < Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Bool(*x < *y))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Fast path: String < String
         if self.is_string_object(&a) && self.is_string_object(&b) {
             let s1 = self.expect_string(&a)?;
@@ -636,7 +720,7 @@ impl Vm {
             self.push(Value::Bool(s1 < s2))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __lt__ 메서드 조회
         match self.lookup_method(&a, "__lt__", module) {
             Ok(method_impl) => {
@@ -649,11 +733,16 @@ impl Vm {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
                         self.push(b)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__lt__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__lt__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__lt__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__lt__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 1, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -661,9 +750,12 @@ impl Vm {
             }
             Err(_) => Err(err(
                 VmErrorKind::TypeError("comparison"),
-                format!("'<' not supported between instances of '{}' and '{}'",
-                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
-                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                format!(
+                    "'<' not supported between instances of '{}' and '{}'",
+                    self.get_type_name(&a, module)
+                        .unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module)
+                        .unwrap_or_else(|_| "unknown".to_string())
                 ),
             )),
         }
@@ -675,13 +767,13 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        
+
         // Fast path: Int <= Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Bool(*x <= *y))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Fast path: String <= String
         if self.is_string_object(&a) && self.is_string_object(&b) {
             let s1 = self.expect_string(&a)?;
@@ -689,7 +781,7 @@ impl Vm {
             self.push(Value::Bool(s1 <= s2))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __le__ 메서드 조회
         match self.lookup_method(&a, "__le__", module) {
             Ok(method_impl) => {
@@ -702,11 +794,16 @@ impl Vm {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
                         self.push(b)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__le__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__le__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__le__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__le__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 1, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -714,9 +811,12 @@ impl Vm {
             }
             Err(_) => Err(err(
                 VmErrorKind::TypeError("comparison"),
-                format!("'<=' not supported between instances of '{}' and '{}'",
-                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
-                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                format!(
+                    "'<=' not supported between instances of '{}' and '{}'",
+                    self.get_type_name(&a, module)
+                        .unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module)
+                        .unwrap_or_else(|_| "unknown".to_string())
                 ),
             )),
         }
@@ -728,13 +828,13 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        
+
         // Fast path: Int > Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Bool(*x > *y))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Fast path: String > String
         if self.is_string_object(&a) && self.is_string_object(&b) {
             let s1 = self.expect_string(&a)?;
@@ -742,7 +842,7 @@ impl Vm {
             self.push(Value::Bool(s1 > s2))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __gt__ 메서드 조회
         match self.lookup_method(&a, "__gt__", module) {
             Ok(method_impl) => {
@@ -755,11 +855,16 @@ impl Vm {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
                         self.push(b)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__gt__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__gt__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__gt__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__gt__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 1, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -767,9 +872,12 @@ impl Vm {
             }
             Err(_) => Err(err(
                 VmErrorKind::TypeError("comparison"),
-                format!("'>' not supported between instances of '{}' and '{}'",
-                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
-                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                format!(
+                    "'>' not supported between instances of '{}' and '{}'",
+                    self.get_type_name(&a, module)
+                        .unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module)
+                        .unwrap_or_else(|_| "unknown".to_string())
                 ),
             )),
         }
@@ -781,13 +889,13 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
-        
+
         // Fast path: Int >= Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Bool(*x >= *y))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Fast path: String >= String
         if self.is_string_object(&a) && self.is_string_object(&b) {
             let s1 = self.expect_string(&a)?;
@@ -795,7 +903,7 @@ impl Vm {
             self.push(Value::Bool(s1 >= s2))?;
             return Ok(ExecutionFlow::Continue);
         }
-        
+
         // Slow path: __ge__ 메서드 조회
         match self.lookup_method(&a, "__ge__", module) {
             Ok(method_impl) => {
@@ -808,11 +916,16 @@ impl Vm {
                         // UserDefined 메서드: 스택 기반 메서드 호출
                         self.push(a)?;
                         self.push(b)?;
-                        let method_sym = module.symbols.iter().position(|s| s == "__ge__")
-                            .ok_or_else(|| err(
-                                VmErrorKind::TypeError("method"),
-                                "__ge__ symbol not found".into()
-                            ))? as u16;
+                        let method_sym = module
+                            .symbols
+                            .iter()
+                            .position(|s| s == "__ge__")
+                            .ok_or_else(|| {
+                                err(
+                                    VmErrorKind::TypeError("method"),
+                                    "__ge__ symbol not found".into(),
+                                )
+                            })? as u16;
                         self.handle_call_method(method_sym, 1, module, io)?;
                         Ok(ExecutionFlow::Continue)
                     }
@@ -820,9 +933,12 @@ impl Vm {
             }
             Err(_) => Err(err(
                 VmErrorKind::TypeError("comparison"),
-                format!("'>=' not supported between instances of '{}' and '{}'",
-                    self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
-                    self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                format!(
+                    "'>=' not supported between instances of '{}' and '{}'",
+                    self.get_type_name(&a, module)
+                        .unwrap_or_else(|_| "unknown".to_string()),
+                    self.get_type_name(&b, module)
+                        .unwrap_or_else(|_| "unknown".to_string())
                 ),
             )),
         }
@@ -872,43 +988,51 @@ impl Vm {
         io: &mut IO,
     ) -> VmResult<ExecutionFlow> {
         let argc = argc as usize;
-        
+
         // input()은 특별 처리 (입력 대기)
         if bid == crate::vm::builtins::BUILTIN_INPUT_ID {
             return self.handle_builtin_input(argc, io);
         }
-        
+
         // 나머지 builtin은 통합 디스패처 사용
         let mut args = Vec::with_capacity(argc);
         for _ in 0..argc {
             args.push(self.pop()?);
         }
         args.reverse(); // 스택에서 꺼낸 순서를 역순으로
-        
+
         let result = crate::vm::builtins::call_builtin(bid, args, io)?;
-        
+
         self.push(result)?;
         Ok(ExecutionFlow::Continue)
     }
 
     // ===== input() 특별 핸들러 (입력 대기 처리 필요) =====
-    
-    fn handle_builtin_input<IO: RuntimeIo>(&mut self, argc: usize, io: &mut IO) -> VmResult<ExecutionFlow> {
+
+    fn handle_builtin_input<IO: RuntimeIo>(
+        &mut self,
+        argc: usize,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
         if argc > 1 {
             return Err(err(
                 VmErrorKind::ArityError {
                     expected: 1,
                     got: argc,
                 },
-                format!("input() takes at most 1 positional argument but {} given", argc),
+                format!(
+                    "input() takes at most 1 positional argument but {} given",
+                    argc
+                ),
             ));
         }
 
         // Get prompt if provided (peek to keep on stack for retry)
         let prompt_str = if argc == 1 {
-            let prompt = self.stack.last().ok_or_else(|| {
-                err(VmErrorKind::StackUnderflow, "stack underflow".into())
-            })?;
+            let prompt = self
+                .stack
+                .last()
+                .ok_or_else(|| err(VmErrorKind::StackUnderflow, "stack underflow".into()))?;
             // Object에서 String 프롬프트 추출
             if self.is_string_object(prompt) {
                 Some(self.expect_string(prompt)?)
@@ -941,9 +1065,7 @@ impl Vm {
                 }
                 Ok(ExecutionFlow::WaitingForInput)
             }
-            ReadResult::Error(e) => {
-                Err(err(VmErrorKind::TypeError("io"), e))
-            }
+            ReadResult::Error(e) => Err(err(VmErrorKind::TypeError("io"), e)),
         }
     }
 
@@ -982,49 +1104,51 @@ impl Vm {
                             // 컴파일러가 __init__의 마지막에 self를 자동으로 반환하도록 생성함
                             // 1. self를 첫 번째 인자로 푸시
                             self.push(instance_value)?;
-                            
+
                             // 2. 나머지 인자들 푸시
                             for arg in args {
                                 self.push(arg)?;
                             }
-                            
+
                             // 3. __init__ 함수 호출 (일반 함수 호출과 동일)
                             self.enter_func(module, init_func_id as usize, argc + 1)?;
-                            
+
                             return Ok(ExecutionFlow::Continue);
-                    } else if !args.is_empty() {
-                        let class_def = &module.classes[*class_id as usize];
-                        return Err(err(
-                            VmErrorKind::ArityError {
-                                expected: 0,
-                                got: args.len(),
-                            },
-                            format!("{}() takes no arguments", class_def.name),
-                        ));
-                    }
+                        } else if !args.is_empty() {
+                            let class_def = &module.classes[*class_id as usize];
+                            return Err(err(
+                                VmErrorKind::ArityError {
+                                    expected: 0,
+                                    got: args.len(),
+                                },
+                                format!("{}() takes no arguments", class_def.name),
+                            ));
+                        }
 
                         self.push(instance_value)?;
                     }
                     // Builtin 클래스 호출 (range 등)
                     ObjectData::BuiltinClass { class_type } => {
-                    use crate::vm::type_def::BuiltinClassType;
-                    let result = match class_type {
-                        BuiltinClassType::Range => crate::vm::builtins::range::create_range(args)?,
-                        BuiltinClassType::List => {
-                            // TODO: list() 생성자는 나중에 구현
-                            return Err(err(
-                                VmErrorKind::TypeError("list constructor"),
-                                "list() constructor not yet implemented".to_string(),
-                            ));
-                        }
-                        BuiltinClassType::Dict => {
-                            // TODO: dict() 생성자는 나중에 구현
-                            return Err(err(
-                                VmErrorKind::TypeError("dict constructor"),
-                                "dict() constructor not yet implemented".to_string(),
-                            ));
-                        }
-                    };
+                        use crate::vm::type_def::BuiltinClassType;
+                        let result = match class_type {
+                            BuiltinClassType::Range => {
+                                crate::vm::builtins::range::create_range(args)?
+                            }
+                            BuiltinClassType::List => {
+                                // TODO: list() 생성자는 나중에 구현
+                                return Err(err(
+                                    VmErrorKind::TypeError("list constructor"),
+                                    "list() constructor not yet implemented".to_string(),
+                                ));
+                            }
+                            BuiltinClassType::Dict => {
+                                // TODO: dict() 생성자는 나중에 구현
+                                return Err(err(
+                                    VmErrorKind::TypeError("dict constructor"),
+                                    "dict() constructor not yet implemented".to_string(),
+                                ));
+                            }
+                        };
                         self.push(result)?;
                     }
                     _ => {
@@ -1042,7 +1166,7 @@ impl Vm {
                 ));
             }
         }
-        
+
         Ok(ExecutionFlow::Continue)
     }
 
@@ -1129,7 +1253,7 @@ impl Vm {
                 ));
             }
         }
-        
+
         Ok(ExecutionFlow::Continue)
     }
 
@@ -1169,7 +1293,7 @@ impl Vm {
         for _ in 0..pair_count {
             let value = self.pop()?;
             let key = self.pop()?;
-            
+
             // key를 DictKey로 변환
             let dict_key = match key {
                 Value::Int(i) => DictKey::Int(i),
@@ -1227,7 +1351,7 @@ impl Vm {
 
                         let items_ref = items.borrow();
                         let len = items_ref.len() as i64;
-                        
+
                         // 음수 인덱스 지원
                         let actual_idx = if idx < 0 {
                             (len + idx) as usize
@@ -1324,7 +1448,7 @@ impl Vm {
 
                         let mut items_mut = items.borrow_mut();
                         let len = items_mut.len() as i64;
-                        
+
                         // 음수 인덱스 지원
                         let actual_idx = if idx < 0 {
                             (len + idx) as usize
@@ -1388,4 +1512,3 @@ impl Vm {
         Ok(ExecutionFlow::Continue)
     }
 }
-

@@ -38,8 +38,6 @@ pub fn expr_parser<'tokens, I>()
 where
     I: ValueInput<'tokens, Token = Token, Span = SimpleSpan> + 'tokens,
 {
-    
-    
     maybe_boxed!(recursive(|expr| {
         let ident = select! { Token::Identifier(s) => s }.labelled("identifier");
 
@@ -90,9 +88,7 @@ where
         // Example: obj.attr, obj.method(), obj[0], obj[i].attr
         let postfix_op = choice((
             // .attr (attribute access)
-            just(Token::Dot)
-                .ignore_then(ident)
-                .map(PostfixOp::Attr),
+            just(Token::Dot).ignore_then(ident).map(PostfixOp::Attr),
             // (args) (function/method call)
             expr.clone()
                 .separated_by(just(Token::Comma))
@@ -153,84 +149,89 @@ where
             (op, s.into_range())
         });
 
-        let unary = maybe_boxed!(
-            op_unary
-                .repeated()
-                .foldr(atom, |(op, op_span): (UnaryOp, Span), right: ExprS| {
-                    let span = op_span.start..right.1.end;
+        let unary = maybe_boxed!(op_unary.repeated().foldr(
+            atom,
+            |(op, op_span): (UnaryOp, Span), right: ExprS| {
+                let span = op_span.start..right.1.end;
+                (
+                    Expr::Unary {
+                        op,
+                        expr: Box::new(right),
+                    },
+                    span,
+                )
+            }
+        ));
+
+        let op = |t| just(t).ignored();
+        let product = maybe_boxed!(
+            unary.clone().foldl(
+                choice((
+                    op(Token::Star).to(BinaryOp::Multiply),
+                    op(Token::SlashSlash).to(BinaryOp::FloorDivide),
+                    op(Token::Percent).to(BinaryOp::Modulo),
+                ))
+                .then(unary)
+                .repeated(),
+                |left: ExprS, (op, right): (BinaryOp, ExprS)| {
+                    let span = left.1.start..right.1.end;
                     (
-                        Expr::Unary {
+                        Expr::Binary {
                             op,
-                            expr: Box::new(right),
+                            left: Box::new(left),
+                            right: Box::new(right),
                         },
                         span,
                     )
-                })
+                },
+            )
         );
-
-        let op = |t| just(t).ignored();
-        let product = maybe_boxed!(unary.clone().foldl(
-            choice((
-                op(Token::Star).to(BinaryOp::Multiply),
-                op(Token::SlashSlash).to(BinaryOp::FloorDivide),
-                op(Token::Percent).to(BinaryOp::Modulo),
-            ))
-            .then(unary)
-            .repeated(),
-            |left: ExprS, (op, right): (BinaryOp, ExprS)| {
-                let span = left.1.start..right.1.end;
-                (
-                    Expr::Binary {
-                        op,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    },
-                    span,
-                )
-            },
-        ));
-        let sum = maybe_boxed!(product.clone().foldl(
-            choice((
-                op(Token::Plus).to(BinaryOp::Add),
-                op(Token::Minus).to(BinaryOp::Subtract),
-            ))
-            .then(product)
-            .repeated(),
-            |left: ExprS, (op, right): (BinaryOp, ExprS)| {
-                let span = left.1.start..right.1.end;
-                (
-                    Expr::Binary {
-                        op,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    },
-                    span,
-                )
-            },
-        ));
-        let comparison = maybe_boxed!(sum.clone().foldl(
-            choice((
-                op(Token::Less).to(BinaryOp::Less),
-                op(Token::LessEqual).to(BinaryOp::LessEqual),
-                op(Token::Greater).to(BinaryOp::Greater),
-                op(Token::GreaterEqual).to(BinaryOp::GreaterEqual),
-                op(Token::EqualEqual).to(BinaryOp::Equal),
-                op(Token::NotEqual).to(BinaryOp::NotEqual),
-            ))
-            .then(sum)
-            .repeated(),
-            |left: ExprS, (op, right): (BinaryOp, ExprS)| {
-                let span = left.1.start..right.1.end;
-                (
-                    Expr::Binary {
-                        op,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    },
-                    span,
-                )
-            },
-        ));
+        let sum = maybe_boxed!(
+            product.clone().foldl(
+                choice((
+                    op(Token::Plus).to(BinaryOp::Add),
+                    op(Token::Minus).to(BinaryOp::Subtract),
+                ))
+                .then(product)
+                .repeated(),
+                |left: ExprS, (op, right): (BinaryOp, ExprS)| {
+                    let span = left.1.start..right.1.end;
+                    (
+                        Expr::Binary {
+                            op,
+                            left: Box::new(left),
+                            right: Box::new(right),
+                        },
+                        span,
+                    )
+                },
+            )
+        );
+        let comparison = maybe_boxed!(
+            sum.clone().foldl(
+                choice((
+                    op(Token::Less).to(BinaryOp::Less),
+                    op(Token::LessEqual).to(BinaryOp::LessEqual),
+                    op(Token::Greater).to(BinaryOp::Greater),
+                    op(Token::GreaterEqual).to(BinaryOp::GreaterEqual),
+                    op(Token::EqualEqual).to(BinaryOp::Equal),
+                    op(Token::NotEqual).to(BinaryOp::NotEqual),
+                ))
+                .then(sum)
+                .repeated(),
+                |left: ExprS, (op, right): (BinaryOp, ExprS)| {
+                    let span = left.1.start..right.1.end;
+                    (
+                        Expr::Binary {
+                            op,
+                            left: Box::new(left),
+                            right: Box::new(right),
+                        },
+                        span,
+                    )
+                },
+            )
+        );
         let and_expr = maybe_boxed!(comparison.clone().foldl(
             op(Token::And).to(BinaryOp::And).then(comparison).repeated(),
             |left: ExprS, (op, right): (BinaryOp, ExprS)| {
@@ -271,8 +272,6 @@ where
 {
     let expr = expr_parser().boxed();
 
-    
-    
     maybe_boxed!(recursive(|stmt| {
         let ident = select! { Token::Identifier(s) => s }.labelled("identifier");
 
@@ -466,14 +465,14 @@ where
     let line = stmt_parser().boxed();
     let blanks = just(Token::Newline).ignored().repeated();
 
-    
-    
-    maybe_boxed!(blanks
-        .clone()
-        .ignore_then(line.clone().repeated().collect::<Vec<Vec<StmtS>>>())
-        .map(|lines| lines.into_iter().flatten().collect::<Vec<StmtS>>())
-        .then_ignore(blanks)
-        .then_ignore(end()))
+    maybe_boxed!(
+        blanks
+            .clone()
+            .ignore_then(line.clone().repeated().collect::<Vec<Vec<StmtS>>>())
+            .map(|lines| lines.into_iter().flatten().collect::<Vec<StmtS>>())
+            .then_ignore(blanks)
+            .then_ignore(end())
+    )
 }
 
 #[cfg(test)]
@@ -498,16 +497,14 @@ mod tests {
     fn parse_expr(source: &str) -> Result<ExprS, Vec<RichTokenError<'_>>> {
         let tokens = tokenize(source);
         let eoi_span = SimpleSpan::new(source.len(), source.len());
-        let stream =
-            chumsky::input::Stream::from_iter(tokens).map(eoi_span, |(t, s)| (t, s));
+        let stream = chumsky::input::Stream::from_iter(tokens).map(eoi_span, |(t, s)| (t, s));
         expr_parser().parse(stream).into_result()
     }
 
     fn parse_program(source: &str) -> Result<Vec<StmtS>, Vec<RichTokenError<'_>>> {
         let tokens = tokenize(source);
         let eoi_span = SimpleSpan::new(source.len(), source.len());
-        let stream =
-            chumsky::input::Stream::from_iter(tokens).map(eoi_span, |(t, s)| (t, s));
+        let stream = chumsky::input::Stream::from_iter(tokens).map(eoi_span, |(t, s)| (t, s));
         program_parser().parse(stream).into_result()
     }
 

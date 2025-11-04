@@ -6,8 +6,11 @@ use super::type_name;
 pub fn call(args: Vec<Value>) -> VmResult<Value> {
     if args.len() != 1 {
         return Err(err(
-            VmErrorKind::ArityError { expected: 1, got: args.len() },
-            format!("len() takes exactly 1 argument ({} given)", args.len())
+            VmErrorKind::ArityError {
+                expected: 1,
+                got: args.len(),
+            },
+            format!("len() takes exactly 1 argument ({} given)", args.len()),
         ));
     }
 
@@ -21,14 +24,13 @@ pub fn call(args: Vec<Value>) -> VmResult<Value> {
                 ObjectData::Dict { map } => Ok(Value::Int(map.borrow().len() as i64)),
                 _ => Err(err(
                     VmErrorKind::TypeError("len"),
-                    format!("object of type '{}' has no len()", type_name(v))
+                    format!("object of type '{}' has no len()", type_name(v)),
                 )),
             }
         }
         _ => Err(err(
             VmErrorKind::TypeError("len"),
-            format!("object of type '{}' has no len()", type_name(v))
+            format!("object of type '{}' has no len()", type_name(v)),
         )),
     }
 }
-

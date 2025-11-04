@@ -4,23 +4,23 @@ use super::super::type_def::{
 };
 use super::super::value::{BuiltinInstanceData, Object, ObjectData};
 use super::super::{VmError, VmErrorKind, VmResult, err};
-use super::{type_name, TYPE_RANGE};
+use super::{TYPE_RANGE, type_name};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 /// range() 생성자
-/// 
+///
 /// range(stop)
 /// range(start, stop)
 /// range(start, stop, step)
-/// 
+///
 /// ```python
 /// for i in range(5):        # 0, 1, 2, 3, 4
 ///     print(i)
-/// 
+///
 /// for i in range(2, 5):     # 2, 3, 4
 ///     print(i)
-/// 
+///
 /// for i in range(0, 10, 2): # 0, 2, 4, 6, 8
 ///     print(i)
 /// ```
@@ -42,20 +42,23 @@ pub fn create_range(args: Vec<Value>) -> VmResult<Value> {
             let start = extract_int(&args[0])?;
             let stop = extract_int(&args[1])?;
             let step = extract_int(&args[2])?;
-            
+
             if step == 0 {
                 return Err(err(
                     VmErrorKind::TypeError("range"),
-                    "range() step argument must not be zero".into()
+                    "range() step argument must not be zero".into(),
                 ));
             }
-            
+
             (start, stop, step)
         }
         n => {
             return Err(err(
-                VmErrorKind::ArityError { expected: 3, got: n },
-                format!("range() takes 1 to 3 arguments ({} given)", n)
+                VmErrorKind::ArityError {
+                    expected: 3,
+                    got: n,
+                },
+                format!("range() takes 1 to 3 arguments ({} given)", n),
             ));
         }
     };
@@ -84,7 +87,7 @@ fn extract_int(v: &Value) -> VmResult<i64> {
         Value::Int(i) => Ok(*i),
         _ => Err(err(
             VmErrorKind::TypeError("int"),
-            format!("range() argument must be int, not '{}'", type_name(v))
+            format!("range() argument must be int, not '{}'", type_name(v)),
         )),
     }
 }
@@ -99,15 +102,26 @@ pub fn range_iter(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
 pub fn range_has_next(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
     if !args.is_empty() {
         return Err(err(
-            VmErrorKind::ArityError { expected: 0, got: args.len() },
-            format!("range.__has_next__() takes 0 arguments but {} given", args.len())
+            VmErrorKind::ArityError {
+                expected: 0,
+                got: args.len(),
+            },
+            format!(
+                "range.__has_next__() takes 0 arguments but {} given",
+                args.len()
+            ),
         ));
     }
-    
+
     match receiver {
         Value::Object(obj) => match &obj.data {
             ObjectData::BuiltinInstance {
-                data: BuiltinInstanceData::Range { current, stop, step },
+                data:
+                    BuiltinInstanceData::Range {
+                        current,
+                        stop,
+                        step,
+                    },
                 ..
             } => {
                 let curr = *current.borrow();
@@ -120,24 +134,41 @@ pub fn range_has_next(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
                 };
                 Ok(Value::Bool(has_next))
             }
-            _ => Err(err(VmErrorKind::TypeError("range"), "expected Range object".into())),
+            _ => Err(err(
+                VmErrorKind::TypeError("range"),
+                "expected Range object".into(),
+            )),
         },
-        _ => Err(err(VmErrorKind::TypeError("range"), "expected Range".into())),
+        _ => Err(err(
+            VmErrorKind::TypeError("range"),
+            "expected Range".into(),
+        )),
     }
 }
 
 pub fn range_next(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
     if !args.is_empty() {
         return Err(err(
-            VmErrorKind::ArityError { expected: 0, got: args.len() },
-            format!("range.__next__() takes 0 arguments but {} given", args.len())
+            VmErrorKind::ArityError {
+                expected: 0,
+                got: args.len(),
+            },
+            format!(
+                "range.__next__() takes 0 arguments but {} given",
+                args.len()
+            ),
         ));
     }
-    
+
     match receiver {
         Value::Object(obj) => match &obj.data {
             ObjectData::BuiltinInstance {
-                data: BuiltinInstanceData::Range { current, stop, step },
+                data:
+                    BuiltinInstanceData::Range {
+                        current,
+                        stop,
+                        step,
+                    },
                 ..
             } => {
                 let mut curr_mut = current.borrow_mut();
@@ -145,9 +176,15 @@ pub fn range_next(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
                 *curr_mut += *step;
                 Ok(Value::Int(value))
             }
-            _ => Err(err(VmErrorKind::TypeError("range"), "expected Range object".into())),
+            _ => Err(err(
+                VmErrorKind::TypeError("range"),
+                "expected Range object".into(),
+            )),
         },
-        _ => Err(err(VmErrorKind::TypeError("range"), "expected Range".into())),
+        _ => Err(err(
+            VmErrorKind::TypeError("range"),
+            "expected Range".into(),
+        )),
     }
 }
 
@@ -177,4 +214,3 @@ pub fn register_type() -> TypeDef {
         ),
     ])
 }
-

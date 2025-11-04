@@ -421,4 +421,3 @@ fn test_type_error() {
         assert!(matches!(e.kind, VmErrorKind::TypeError(_)));
     }
 }
-

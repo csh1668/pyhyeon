@@ -2,10 +2,10 @@
 //
 // 이 모듈은 바이트코드를 실행하는 VM을 구현합니다.
 
+use crate::runtime_io::RuntimeIo;
 use crate::vm::bytecode::{ClassDef, Instruction as I, Module, Value};
 use crate::vm::type_def::{BuiltinClassType, TYPE_RANGE, TYPE_STR, TYPE_USER_START};
 use crate::vm::value::{BuiltinInstanceData, Object, ObjectData};
-use crate::runtime_io::RuntimeIo;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -69,7 +69,7 @@ pub fn err(kind: VmErrorKind, message: String) -> VmError {
 }
 
 // 유틸리티 함수들은 vm::utils로 이동
-use super::utils::{eq_vals, display_value};
+use super::utils::{display_value, eq_vals};
 
 /// IP를 상대적으로 점프
 fn jump_rel(ip: &mut usize, off: i32) {
@@ -142,7 +142,7 @@ impl Vm {
                     self.state = VmState::Finished;
                     return Ok(ret);
                 }
-                
+
                 // 반환값을 스택에 푸시
                 if let Some(v) = ret {
                     self.push(v)?;
@@ -153,10 +153,10 @@ impl Vm {
             if let Some(f) = self.frames.last_mut() {
                 f.ip = ip + 1;
             }
-            
+
             use instruction::ExecutionFlow;
             match self.execute_instruction(ins, module, io)? {
-                ExecutionFlow::Continue => { }
+                ExecutionFlow::Continue => {}
                 ExecutionFlow::WaitingForInput => {
                     self.state = VmState::WaitingForInput;
                     return Ok(None);
@@ -209,13 +209,13 @@ impl Vm {
             return Err(err(VmErrorKind::StackOverflow, "frame overflow".into()));
         }
         let num_locals = module.functions[func_id].num_locals as usize;
-        
+
         // num_locals는 최소한 argc만큼은 있어야 함
         let actual_locals = num_locals.max(argc);
-        
+
         // ret_stack_size는 인자를 팝하기 BEFORE 저장해야 함
         let ret_stack_size = self.stack.len() - argc;
-        
+
         let locals = {
             let mut locals = vec![Value::None; actual_locals];
             for i in (0..argc).rev() {
@@ -313,5 +313,4 @@ impl Vm {
             ObjectData::BuiltinClass { class_type },
         )))
     }
-
 }

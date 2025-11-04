@@ -1,8 +1,8 @@
 //! Dict methods implementation
 
 use super::super::bytecode::Value;
-use super::super::value::{Object, ObjectData, DictKey, BuiltinInstanceData};
-use super::super::type_def::{TYPE_DICT, TYPE_LIST, BuiltinClassType};
+use super::super::type_def::{BuiltinClassType, TYPE_DICT, TYPE_LIST};
+use super::super::value::{BuiltinInstanceData, DictKey, Object, ObjectData};
 use super::super::{VmError, VmErrorKind, VmResult, err};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -24,7 +24,7 @@ pub fn dict_get(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
             if let ObjectData::Dict { map } = &obj.data {
                 let key = value_to_dict_key(&args[0])?;
                 let map_ref = map.borrow();
-                
+
                 match map_ref.get(&key) {
                     Some(value) => Ok(value.clone()),
                     None => {
@@ -55,11 +55,8 @@ pub fn dict_keys(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
         Value::Object(obj) => {
             if let ObjectData::Dict { map } = &obj.data {
                 let map_ref = map.borrow();
-                let keys: Vec<Value> = map_ref
-                    .keys()
-                    .map(dict_key_to_value)
-                    .collect();
-                
+                let keys: Vec<Value> = map_ref.keys().map(dict_key_to_value).collect();
+
                 // 리스트로 반환
                 Ok(Value::Object(Rc::new(Object::new(
                     TYPE_LIST,
@@ -87,11 +84,8 @@ pub fn dict_values(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
         Value::Object(obj) => {
             if let ObjectData::Dict { map } = &obj.data {
                 let map_ref = map.borrow();
-                let values: Vec<Value> = map_ref
-                    .values()
-                    .cloned()
-                    .collect();
-                
+                let values: Vec<Value> = map_ref.values().cloned().collect();
+
                 // 리스트로 반환
                 Ok(Value::Object(Rc::new(Object::new(
                     TYPE_LIST,
@@ -141,7 +135,7 @@ pub fn dict_iter(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
             if let ObjectData::Dict { map } = &obj.data {
                 let map_ref = map.borrow();
                 let keys: Vec<DictKey> = map_ref.keys().cloned().collect();
-                
+
                 // DictIterator 생성
                 let iterator = Value::Object(Rc::new(Object::new(
                     TYPE_DICT,
@@ -203,7 +197,7 @@ pub fn dict_next(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
             } = &obj.data
             {
                 let mut current_mut = current.borrow_mut();
-                
+
                 if *current_mut >= keys.len() {
                     return Err(err(
                         VmErrorKind::TypeError("dict iterator.__next__"),
@@ -245,7 +239,7 @@ pub fn dict_pop(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
             if let ObjectData::Dict { map } = &obj.data {
                 let key = value_to_dict_key(&args[0])?;
                 let mut map_mut = map.borrow_mut();
-                
+
                 match map_mut.remove(&key) {
                     Some(value) => Ok(value),
                     None => {
@@ -291,12 +285,12 @@ pub fn dict_update(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
                         if let ObjectData::Dict { map: other_map } = &other_obj.data {
                             let other_map_ref = other_map.borrow();
                             let mut map_mut = map.borrow_mut();
-                            
+
                             // other의 모든 key-value를 복사
                             for (key, value) in other_map_ref.iter() {
                                 map_mut.insert(key.clone(), value.clone());
                             }
-                            
+
                             Ok(Value::None)
                         } else {
                             Err(err(
@@ -331,7 +325,7 @@ pub fn dict_items(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
             if let ObjectData::Dict { map } = &obj.data {
                 let map_ref = map.borrow();
                 let mut items = Vec::new();
-                
+
                 for (key, value) in map_ref.iter() {
                     // 각 (key, value) 쌍을 [key, value] 리스트로 만듦
                     let pair = vec![dict_key_to_value(key), value.clone()];
@@ -342,7 +336,7 @@ pub fn dict_items(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
                         },
                     ))));
                 }
-                
+
                 // 리스트의 리스트로 반환
                 Ok(Value::Object(Rc::new(Object::new(
                     TYPE_LIST,
@@ -396,4 +390,3 @@ fn dict_key_to_value(key: &DictKey) -> Value {
         }
     }
 }
-

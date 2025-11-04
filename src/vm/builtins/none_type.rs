@@ -4,4 +4,3 @@ use super::super::type_def::{TypeDef, TypeFlags};
 pub fn register_type() -> TypeDef {
     TypeDef::new("NoneType", TypeFlags::IMMUTABLE)
 }
-

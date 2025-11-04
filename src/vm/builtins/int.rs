@@ -1,14 +1,17 @@
 use super::super::bytecode::Value;
 use super::super::type_def::{TypeDef, TypeFlags};
 use super::super::{VmError, VmErrorKind, VmResult, err};
-use super::{type_name, TYPE_INT};
+use super::{TYPE_INT, type_name};
 
 /// int() builtin 함수
 pub fn call(args: Vec<Value>) -> VmResult<Value> {
     if args.len() != 1 {
         return Err(err(
-            VmErrorKind::ArityError { expected: 1, got: args.len() },
-            format!("int() takes exactly 1 argument ({} given)", args.len())
+            VmErrorKind::ArityError {
+                expected: 1,
+                got: args.len(),
+            },
+            format!("int() takes exactly 1 argument ({} given)", args.len()),
         ));
     }
 
@@ -19,24 +22,24 @@ pub fn call(args: Vec<Value>) -> VmResult<Value> {
         Value::Object(obj) => {
             use super::super::value::ObjectData;
             match &obj.data {
-                ObjectData::String(s) => {
-                    s.trim()
-                        .parse::<i64>()
-                        .map(Value::Int)
-                        .map_err(|_| err(
-                            VmErrorKind::TypeError("int"),
-                            format!("invalid literal for int() with base 10: '{}'", s)
-                        ))
-                }
+                ObjectData::String(s) => s.trim().parse::<i64>().map(Value::Int).map_err(|_| {
+                    err(
+                        VmErrorKind::TypeError("int"),
+                        format!("invalid literal for int() with base 10: '{}'", s),
+                    )
+                }),
                 _ => Err(err(
                     VmErrorKind::TypeError("int"),
-                    format!("int() argument must be a string or a number, not '{}'", type_name(v))
+                    format!(
+                        "int() argument must be a string or a number, not '{}'",
+                        type_name(v)
+                    ),
                 )),
             }
         }
         Value::None => Err(err(
             VmErrorKind::TypeError("int"),
-            "int() argument must be a string or a number, not 'NoneType'".into()
+            "int() argument must be a string or a number, not 'NoneType'".into(),
         )),
     }
 }
@@ -52,7 +55,7 @@ fn expect_int(v: &Value) -> VmResult<i64> {
         Value::Int(n) => Ok(*n),
         _ => Err(err(
             VmErrorKind::TypeError("int"),
-            format!("expected int, got {}", type_name(v))
+            format!("expected int, got {}", type_name(v)),
         )),
     }
 }
@@ -85,7 +88,7 @@ pub fn int_floordiv(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
     if b == 0 {
         return Err(err(
             VmErrorKind::ZeroDivision,
-            "integer division or modulo by zero".into()
+            "integer division or modulo by zero".into(),
         ));
     }
     Ok(Value::Int(a / b))
@@ -98,7 +101,7 @@ pub fn int_mod(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
     if b == 0 {
         return Err(err(
             VmErrorKind::ZeroDivision,
-            "integer division or modulo by zero".into()
+            "integer division or modulo by zero".into(),
         ));
     }
     Ok(Value::Int(a % b))

@@ -1,8 +1,8 @@
 //! List methods implementation
 
 use super::super::bytecode::Value;
-use super::super::value::{Object, ObjectData, BuiltinInstanceData};
-use super::super::type_def::{TYPE_LIST, BuiltinClassType};
+use super::super::type_def::{BuiltinClassType, TYPE_LIST};
+use super::super::value::{BuiltinInstanceData, Object, ObjectData};
 use super::super::{VmError, VmErrorKind, VmResult, err};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -54,7 +54,7 @@ pub fn list_pop(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
         Value::Object(obj) => {
             if let ObjectData::List { items } = &obj.data {
                 let mut items_mut = items.borrow_mut();
-                
+
                 if items_mut.is_empty() {
                     return Err(err(
                         VmErrorKind::TypeError("list.pop"),
@@ -123,7 +123,10 @@ pub fn list_extend(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
                 // iterable이 리스트인지 확인
                 match &args[0] {
                     Value::Object(other_obj) => {
-                        if let ObjectData::List { items: ref other_items } = other_obj.data {
+                        if let ObjectData::List {
+                            items: ref other_items,
+                        } = other_obj.data
+                        {
                             let other_vec = other_items.borrow().clone();
                             items.borrow_mut().extend(other_vec);
                             Ok(Value::None)
@@ -171,7 +174,7 @@ pub fn list_insert(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
                 let index = match args[0] {
                     Value::Int(i) => {
                         let len = items.borrow().len() as i64;
-                        
+
                         if i < 0 {
                             0.max((len + i) as usize)
                         } else {
@@ -219,7 +222,7 @@ pub fn list_remove(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
         Value::Object(obj) => {
             if let ObjectData::List { items } = &obj.data {
                 let mut items_mut = items.borrow_mut();
-                
+
                 // 첫 번째로 일치하는 항목 찾기
                 for (i, item) in items_mut.iter().enumerate() {
                     if super::super::utils::eq_vals(item, &args[0]) {
@@ -274,10 +277,10 @@ pub fn list_sort(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
         Value::Object(obj) => {
             if let ObjectData::List { items } = &obj.data {
                 let mut items_mut = items.borrow_mut();
-                
+
                 // 정수 리스트만 정렬 지원
                 let all_ints = items_mut.iter().all(|v| matches!(v, Value::Int(_)));
-                
+
                 if !all_ints {
                     return Err(err(
                         VmErrorKind::TypeError("list.sort"),
@@ -285,13 +288,7 @@ pub fn list_sort(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
                     ));
                 }
 
-                items_mut.sort_by_key(|v| {
-                    if let Value::Int(i) = v {
-                        *i
-                    } else {
-                        0
-                    }
-                });
+                items_mut.sort_by_key(|v| if let Value::Int(i) = v { *i } else { 0 });
 
                 Ok(Value::None)
             } else {
@@ -345,7 +342,7 @@ pub fn list_index(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
         Value::Object(obj) => {
             if let ObjectData::List { items } = &obj.data {
                 let items_ref = items.borrow();
-                
+
                 for (i, item) in items_ref.iter().enumerate() {
                     if super::super::utils::eq_vals(item, &args[0]) {
                         return Ok(Value::Int(i as i64));
@@ -390,7 +387,7 @@ pub fn list_count(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
                     .iter()
                     .filter(|item| super::super::utils::eq_vals(item, &args[0]))
                     .count();
-                
+
                 Ok(Value::Int(count as i64))
             } else {
                 Err(err(
@@ -474,7 +471,7 @@ pub fn list_next(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
             {
                 let items_ref = items.borrow();
                 let mut current_mut = current.borrow_mut();
-                
+
                 if *current_mut >= items_ref.len() {
                     return Err(err(
                         VmErrorKind::TypeError("list iterator.__next__"),
@@ -498,4 +495,3 @@ pub fn list_next(receiver: &Value, _args: Vec<Value>) -> VmResult<Value> {
         )),
     }
 }
-

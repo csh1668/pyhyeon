@@ -1,7 +1,7 @@
 use super::super::bytecode::{Module, Value};
 use super::super::type_def::{Arity, MethodImpl, TYPE_BOOL, TYPE_INT, TYPE_NONE, TYPE_STR};
 use super::super::value::ObjectData;
-use super::{err, Vm, VmErrorKind, VmResult};
+use super::{Vm, VmErrorKind, VmResult, err};
 use crate::runtime_io::RuntimeIo;
 
 impl Vm {
@@ -52,21 +52,25 @@ impl Vm {
     ) -> VmResult<MethodImpl> {
         // UserInstance는 별도 처리 (클래스 테이블 사용)
         if let Value::Object(obj) = value
-            && let ObjectData::UserInstance { class_id } = &obj.data {
-                let class_def = &module.classes[*class_id as usize];
-                
-                // 클래스의 메서드 테이블에서 찾기
-                let func_id = class_def.methods.get(method_name).ok_or_else(|| {
-                    err(
-                        VmErrorKind::TypeError("method"),
-                        format!("'{}' object has no method '{}'", class_def.name, method_name),
-                    )
-                })?;
-                
-                // UserDefined 메서드로 반환
-                return Ok(MethodImpl::UserDefined { func_id: *func_id });
-            }
-        
+            && let ObjectData::UserInstance { class_id } = &obj.data
+        {
+            let class_def = &module.classes[*class_id as usize];
+
+            // 클래스의 메서드 테이블에서 찾기
+            let func_id = class_def.methods.get(method_name).ok_or_else(|| {
+                err(
+                    VmErrorKind::TypeError("method"),
+                    format!(
+                        "'{}' object has no method '{}'",
+                        class_def.name, method_name
+                    ),
+                )
+            })?;
+
+            // UserDefined 메서드로 반환
+            return Ok(MethodImpl::UserDefined { func_id: *func_id });
+        }
+
         // 1. 값의 타입 ID 가져오기
         let type_id = self.get_type_id(value)?;
 
@@ -91,7 +95,7 @@ impl Vm {
     /// 메서드 구현을 실행하는 헬퍼 함수
     ///
     /// lookup_method로 얻은 MethodImpl을 받아서 실행합니다.
-    /// 
+    ///
     /// UserDefined 메서드는 연산자 내에서 동기적으로 실행할 수 없으므로
     /// None을 반환합니다. 이 경우 호출자는 스택 기반 실행을 사용해야 합니다.
     pub(super) fn call_method_impl<IO: RuntimeIo>(
@@ -121,9 +125,11 @@ impl Vm {
                         ),
                     ));
                 }
-                
+
                 // Native 메서드 실행
-                Ok(Some(self.call_native_method_dispatch(func, receiver, args, module, io)?))
+                Ok(Some(self.call_native_method_dispatch(
+                    func, receiver, args, module, io,
+                )?))
             }
             MethodImpl::UserDefined { .. } => {
                 // UserDefined 메서드는 동기적 실행 불가
@@ -169,27 +175,28 @@ impl Vm {
 
         // Phase 4: UserInstance 메서드는 별도 처리 (타입 테이블이 아닌 클래스 테이블 사용)
         if let Value::Object(obj) = &receiver
-            && let ObjectData::UserInstance { class_id } = &obj.data {
-                let class_def = &module.classes[*class_id as usize];
+            && let ObjectData::UserInstance { class_id } = &obj.data
+        {
+            let class_def = &module.classes[*class_id as usize];
 
-                // 메서드 테이블에서 찾기
-                let func_id = class_def.methods.get(method_name).ok_or_else(|| {
-                    err(
-                        VmErrorKind::TypeError("method"),
-                        format!("'{}' has no method '{}'", class_def.name, method_name),
-                    )
-                })?;
+            // 메서드 테이블에서 찾기
+            let func_id = class_def.methods.get(method_name).ok_or_else(|| {
+                err(
+                    VmErrorKind::TypeError("method"),
+                    format!("'{}' has no method '{}'", class_def.name, method_name),
+                )
+            })?;
 
-                // self를 첫 번째 인자로 추가
-                self.push(receiver.clone())?;
-                for arg in args {
-                    self.push(arg)?;
-                }
-
-                // 함수 호출
-                self.enter_func(module, *func_id as usize, argc + 1)?;
-                return Ok(());
+            // self를 첫 번째 인자로 추가
+            self.push(receiver.clone())?;
+            for arg in args {
+                self.push(arg)?;
             }
+
+            // 함수 호출
+            self.enter_func(module, *func_id as usize, argc + 1)?;
+            return Ok(());
+        }
 
         // 4. 메서드 조회 (통일된 방식!)
         let method_impl = self.lookup_method(&receiver, method_name, module)?;
@@ -262,9 +269,9 @@ impl Vm {
         _module: &Module,
         _io: &mut dyn RuntimeIo,
     ) -> VmResult<Value> {
-        use super::super::builtins::{int, range, str_builtin, list_methods, dict_methods};
+        use super::super::builtins::{dict_methods, int, list_methods, range, str_builtin};
         use super::super::type_def::NativeMethod as NM;
-        
+
         // builtins 모듈에서 직접 호출
         match method {
             // Int 매직 메서드들
@@ -282,7 +289,7 @@ impl Vm {
             NM::IntGe => int::int_ge(receiver, args),
             NM::IntEq => int::int_eq(receiver, args),
             NM::IntNe => int::int_ne(receiver, args),
-            
+
             // String 매직 메서드들
             NM::StrAdd => str_builtin::str_add(receiver, args),
             NM::StrMul => str_builtin::str_mul(receiver, args),
@@ -292,7 +299,7 @@ impl Vm {
             NM::StrGe => str_builtin::str_ge(receiver, args),
             NM::StrEq => str_builtin::str_eq(receiver, args),
             NM::StrNe => str_builtin::str_ne(receiver, args),
-            
+
             // String 일반 메서드들
             NM::StrUpper => str_builtin::str_upper(receiver, args),
             NM::StrLower => str_builtin::str_lower(receiver, args),
@@ -304,7 +311,7 @@ impl Vm {
             NM::StrEndsWith => str_builtin::str_ends_with(receiver, args),
             NM::StrFind => str_builtin::str_find(receiver, args),
             NM::StrCount => str_builtin::str_count(receiver, args),
-            
+
             // Range 메서드들
             NM::RangeIter => range::range_iter(receiver, args),
             NM::RangeHasNext => range::range_has_next(receiver, args),
@@ -344,15 +351,13 @@ impl Vm {
     /// Object의 ObjectData::String에서 문자열 참조를 가져옵니다.
     pub(super) fn expect_string<'a>(&self, v: &'a Value) -> VmResult<&'a str> {
         match v {
-            Value::Object(obj) => {
-                match &obj.data {
-                    ObjectData::String(s) => Ok(s),
-                    _ => Err(err(
-                        VmErrorKind::TypeError("str"),
-                        "expected string object".into(),
-                    )),
-                }
-            }
+            Value::Object(obj) => match &obj.data {
+                ObjectData::String(s) => Ok(s),
+                _ => Err(err(
+                    VmErrorKind::TypeError("str"),
+                    "expected string object".into(),
+                )),
+            },
             _ => Err(err(VmErrorKind::TypeError("str"), "expected String".into())),
         }
     }
@@ -362,11 +367,8 @@ impl Vm {
     /// Value가 String Object (type_id == TYPE_STR)인지 체크합니다.
     pub(super) fn is_string_object(&self, v: &Value) -> bool {
         match v {
-            Value::Object(obj) => {
-                obj.type_id == TYPE_STR
-            }
+            Value::Object(obj) => obj.type_id == TYPE_STR,
             _ => false,
         }
     }
 }
-

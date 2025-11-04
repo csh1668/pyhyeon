@@ -227,10 +227,14 @@ fn tc_stmt(
             });
             Ok(())
         }
-        Stmt::For { var, iterable, body } => {
+        Stmt::For {
+            var,
+            iterable,
+            body,
+        } => {
             // iterable의 타입을 확인 (현재는 range만 지원)
             let _iterable_ty = tc_expr(iterable, tenv, ctx)?;
-            
+
             // for문 내부는 별도 환경에서 타입 체크
             let mut loop_env = snapshot_env(tenv);
             with_env(&mut loop_env, |e| {

@@ -325,31 +325,32 @@ mod wasm_api {
                 if session.execution_timer.is_none() {
                     session.execution_timer = Some(instant::Instant::now());
                 }
-                
+
                 // Execute
                 match session.vm.run_with_io(&mut session.module, &mut session.io) {
                     Ok(_) => {
                         let state = session.vm.get_state();
-                        
+
                         // Stop timer and accumulate if waiting for input or finished
                         let mut execution_time_ms = None;
                         let is_waiting = state == vm::machine::VmState::WaitingForInput;
                         let is_finished = state == vm::machine::VmState::Finished;
                         let is_error = state == vm::machine::VmState::Error;
-                        
+
                         if is_waiting || is_finished || is_error {
                             if let Some(timer) = session.execution_timer.take() {
                                 session.accumulated_time += timer.elapsed();
                             }
-                            
+
                             // Set execution time for finished state
                             if is_finished {
-                                execution_time_ms = Some(session.accumulated_time.as_secs_f64() * 1000.0);
+                                execution_time_ms =
+                                    Some(session.accumulated_time.as_secs_f64() * 1000.0);
                             }
                         }
-                        
+
                         let state_str = vm_state_to_string(state);
-                        
+
                         serde_wasm_bindgen::to_value(&VmStateInfo {
                             state: state_str.to_string(),
                             output: session.io.drain_output(),
@@ -362,7 +363,7 @@ mod wasm_api {
                         if let Some(timer) = session.execution_timer.take() {
                             session.accumulated_time += timer.elapsed();
                         }
-                        
+
                         serde_wasm_bindgen::to_value(&VmStateInfo {
                             state: "error".to_string(),
                             output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
@@ -400,26 +401,27 @@ mod wasm_api {
                 match session.vm.run_with_io(&mut session.module, &mut session.io) {
                     Ok(_) => {
                         let state = session.vm.get_state();
-                        
+
                         // Stop timer and accumulate if waiting for input or finished
                         let mut execution_time_ms = None;
                         let is_waiting = state == vm::machine::VmState::WaitingForInput;
                         let is_finished = state == vm::machine::VmState::Finished;
                         let is_error = state == vm::machine::VmState::Error;
-                        
+
                         if is_waiting || is_finished || is_error {
                             if let Some(timer) = session.execution_timer.take() {
                                 session.accumulated_time += timer.elapsed();
                             }
-                            
+
                             // Set execution time for finished state
                             if is_finished {
-                                execution_time_ms = Some(session.accumulated_time.as_secs_f64() * 1000.0);
+                                execution_time_ms =
+                                    Some(session.accumulated_time.as_secs_f64() * 1000.0);
                             }
                         }
-                        
+
                         let state_str = vm_state_to_string(state);
-                        
+
                         serde_wasm_bindgen::to_value(&VmStateInfo {
                             state: state_str.to_string(),
                             output: session.io.drain_output(),
@@ -432,7 +434,7 @@ mod wasm_api {
                         if let Some(timer) = session.execution_timer.take() {
                             session.accumulated_time += timer.elapsed();
                         }
-                        
+
                         serde_wasm_bindgen::to_value(&VmStateInfo {
                             state: "error".to_string(),
                             output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
@@ -464,7 +466,7 @@ mod wasm_api {
                 } else {
                     None
                 };
-                
+
                 serde_wasm_bindgen::to_value(&VmStateInfo {
                     state: vm_state_to_string(state).to_string(),
                     output: session.io.drain_output(),
