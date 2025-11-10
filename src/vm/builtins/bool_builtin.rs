@@ -24,6 +24,7 @@ pub fn call(args: Vec<Value>) -> VmResult<Value> {
     let result = match v {
         Value::Bool(b) => *b,
         Value::Int(i) => *i != 0,
+        Value::Float(f) => *f != 0.0,
         Value::Object(obj) => {
             use super::super::value::ObjectData;
             match &obj.data {

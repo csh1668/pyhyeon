@@ -364,9 +364,18 @@ mod wasm_api {
                             session.accumulated_time += timer.elapsed();
                         }
 
+                        // Get previous output and append error message with red color
+                        let previous_output = session.io.drain_output();
+                        let error_msg = format!("\x1b[31mRuntime Error: {}\n{:?}\x1b[0m", err.message, err.kind);
+                        let combined_output = if previous_output.is_empty() {
+                            error_msg
+                        } else {
+                            format!("{}\n{}", previous_output, error_msg)
+                        };
+
                         serde_wasm_bindgen::to_value(&VmStateInfo {
                             state: "error".to_string(),
-                            output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
+                            output: combined_output,
                             execution_time_ms: None,
                         })
                         .unwrap()
@@ -435,9 +444,18 @@ mod wasm_api {
                             session.accumulated_time += timer.elapsed();
                         }
 
+                        // Get previous output and append error message with red color
+                        let previous_output = session.io.drain_output();
+                        let error_msg = format!("\x1b[31mRuntime Error: {}\n{:?}\x1b[0m", err.message, err.kind);
+                        let combined_output = if previous_output.is_empty() {
+                            error_msg
+                        } else {
+                            format!("{}\n{}", previous_output, error_msg)
+                        };
+
                         serde_wasm_bindgen::to_value(&VmStateInfo {
                             state: "error".to_string(),
-                            output: format!("Runtime Error: {}\n{:?}", err.message, err.kind),
+                            output: combined_output,
                             execution_time_ms: None,
                         })
                         .unwrap()

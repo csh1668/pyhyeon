@@ -22,11 +22,13 @@ pub enum Token {
     Int(i64),
     String(String),
     Identifier(String),
+    Float(f64),
     // Operators and punctuation
     Plus,
     Minus,
     Star,
     SlashSlash,
+    Slash,
     Percent,
     EqualEqual,
     NotEqual,
@@ -78,12 +80,14 @@ impl Display for Token {
             Token::Int(i) => write!(f, "{}", i),
             Token::String(s) => write!(f, "\"{}\"", s),
             Token::Identifier(name) => write!(f, "{}", name),
+            Token::Float(ff) => write!(f, "{}", ff),
 
             // Operators and punctuation
             Token::Plus => write!(f, "+"),
             Token::Minus => write!(f, "-"),
             Token::Star => write!(f, "*"),
             Token::SlashSlash => write!(f, "//"),
+            Token::Slash => write!(f, "/"),
             Token::Percent => write!(f, "%"),
             Token::EqualEqual => write!(f, "=="),
             Token::NotEqual => write!(f, "!="),

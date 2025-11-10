@@ -5,6 +5,7 @@
 use crate::runtime_io::RuntimeIo;
 use crate::vm::bytecode::{ClassDef, Instruction as I, Module, Value};
 use crate::vm::type_def::{BuiltinClassType, TYPE_RANGE, TYPE_STR, TYPE_USER_START};
+use crate::vm::utils::{make_builtin_class, make_string, make_user_class, make_user_instance};
 use crate::vm::value::{BuiltinInstanceData, Object, ObjectData};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -282,35 +283,4 @@ impl Vm {
         }
     }
 
-    // ========== Object 생성 헬퍼들 ==========
-
-    fn make_string(&self, s: String) -> Value {
-        use crate::vm::type_def::make_string as make_str;
-        make_str(s)
-    }
-
-    fn make_user_class(&self, class_def: &ClassDef) -> Value {
-        let class_id = class_def.methods.get("__class_id__").copied().unwrap_or(0);
-        Value::Object(Rc::new(Object::new(
-            TYPE_USER_START + class_id,
-            ObjectData::UserClass {
-                class_id,
-                methods: class_def.methods.clone(),
-            },
-        )))
-    }
-
-    fn make_user_instance(&self, class_id: u16) -> Value {
-        Value::Object(Rc::new(Object::new_with_attrs(
-            TYPE_USER_START + class_id,
-            ObjectData::UserInstance { class_id },
-        )))
-    }
-
-    fn make_builtin_class(&self, class_type: BuiltinClassType) -> Value {
-        Value::Object(Rc::new(Object::new(
-            TYPE_RANGE,
-            ObjectData::BuiltinClass { class_type },
-        )))
-    }
 }

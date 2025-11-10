@@ -69,6 +69,7 @@ where
                 Token::Int(i) => Expr::Literal(Literal::Int(i)),
                 Token::Bool(b) => Expr::Literal(Literal::Bool(b)),
                 Token::String(s) => Expr::Literal(Literal::String(s)),
+                Token::Float(f) => Expr::Literal(Literal::Float(f)),
                 Token::None => Expr::Literal(Literal::None),
             }
             .labelled("literal"),
@@ -169,6 +170,7 @@ where
                 choice((
                     op(Token::Star).to(BinaryOp::Multiply),
                     op(Token::SlashSlash).to(BinaryOp::FloorDivide),
+                    op(Token::Slash).to(BinaryOp::Divide),
                     op(Token::Percent).to(BinaryOp::Modulo),
                 ))
                 .then(unary)

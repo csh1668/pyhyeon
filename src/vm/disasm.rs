@@ -74,6 +74,7 @@ pub fn disassemble_function(
 fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt::Result {
     match ins {
         I::ConstI64(n) => write!(w, "ConstI64 {}", n),
+        I::ConstF64(f) => write!(w, "ConstF64 {}", f),
         I::ConstStr(idx) => {
             let s = &module.string_pool[*idx as usize];
             write!(w, "ConstStr {} (\"{}\")", idx, s)
@@ -82,6 +83,8 @@ fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt:
         I::True => write!(w, "True"),
         I::False => write!(w, "False"),
         I::None => write!(w, "None"),
+
+        I::Pop => write!(w, "Pop"),
 
         I::LoadLocal(idx) => write!(w, "LoadLocal {}", idx),
         I::StoreLocal(idx) => write!(w, "StoreLocal {}", idx),
@@ -98,6 +101,7 @@ fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt:
         I::Sub => write!(w, "Sub"),
         I::Mul => write!(w, "Mul"),
         I::Div => write!(w, "Div"),
+        I::TrueDiv => write!(w, "TrueDiv"),
         I::Mod => write!(w, "Mod"),
         I::Neg => write!(w, "Neg"),
         I::Pos => write!(w, "Pos"),

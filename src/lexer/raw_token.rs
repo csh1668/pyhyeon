@@ -41,6 +41,9 @@ pub enum RawToken {
     #[regex(r#""([^"\\]|\\.)*""#, lex_string)]
     #[regex(r#"'([^'\\]|\\.)*'"#, lex_string)]
     String(String),
+    #[regex(r"[0-9]+\.[0-9]+", lex_float)]
+    #[regex(r"[0-9]+\.[0-9]+[eE][+-]?[0-9]+", lex_float)]
+    Float(f64),
 
     #[regex(r"[_\p{XID_Start}]\p{XID_Continue}*", lex_identifier)]
     Identifier(String),
@@ -54,6 +57,8 @@ pub enum RawToken {
     Star,
     #[token("//")]
     SlashSlash,
+    #[token("/")]
+    Slash,
     #[token("%")]
     Percent,
     #[token("==")]
@@ -98,6 +103,11 @@ pub enum RawToken {
 fn lex_integer(lexer: &mut logos::Lexer<RawToken>) -> Option<i64> {
     let slice = lexer.slice();
     slice.parse::<i64>().ok()
+}
+
+fn lex_float(lexer: &mut logos::Lexer<RawToken>) -> Option<f64> {
+    let slice = lexer.slice();
+    slice.parse::<f64>().ok()
 }
 
 fn lex_string(lexer: &mut logos::Lexer<RawToken>) -> Option<String> {

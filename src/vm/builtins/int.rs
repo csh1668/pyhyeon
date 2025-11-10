@@ -1,5 +1,6 @@
 use super::super::bytecode::Value;
 use super::super::type_def::{TypeDef, TypeFlags};
+use super::super::utils::expect_int;
 use super::super::{VmError, VmErrorKind, VmResult, err};
 use super::{TYPE_INT, type_name};
 
@@ -18,6 +19,7 @@ pub fn call(args: Vec<Value>) -> VmResult<Value> {
     let v = &args[0];
     match v {
         Value::Int(i) => Ok(Value::Int(*i)),
+        Value::Float(f) => Ok(Value::Int(*f as i64)),
         Value::Bool(b) => Ok(Value::Int(if *b { 1 } else { 0 })),
         Value::Object(obj) => {
             use super::super::value::ObjectData;
@@ -49,16 +51,6 @@ pub fn register_type() -> TypeDef {
 }
 
 // ========== 매직 메서드 구현 ==========
-
-fn expect_int(v: &Value) -> VmResult<i64> {
-    match v {
-        Value::Int(n) => Ok(*n),
-        _ => Err(err(
-            VmErrorKind::TypeError("int"),
-            format!("expected int, got {}", type_name(v)),
-        )),
-    }
-}
 
 /// __add__: Int + Int
 pub fn int_add(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
@@ -92,6 +84,19 @@ pub fn int_floordiv(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
         ));
     }
     Ok(Value::Int(a / b))
+}
+
+/// __truediv__: Int / Int
+pub fn int_truediv(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
+    let a = expect_int(receiver)?;
+    let b = expect_int(&args[0])?;
+    if b == 0 {
+        return Err(err(
+            VmErrorKind::ZeroDivision,
+            "integer division or modulo by zero".into(),
+        ));
+    }
+    Ok(Value::Float(a as f64 / b as f64))
 }
 
 /// __mod__: Int % Int

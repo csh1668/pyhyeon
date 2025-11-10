@@ -12,21 +12,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { initWasm } from './lib/utils'
-import { 
-  analyze as wasmAnalyze,
-  start_program,
-  provide_input,
-  stop_program
-} from '@pkg/pyhyeon'
+import { analyze as wasmAnalyze } from '@pkg/pyhyeon'
 import { AnsiUp } from 'ansi_up'
-
-type VmState = 'idle' | 'running' | 'waiting_for_input' | 'finished' | 'error'
-
-interface VmStateInfo {
-  state: string
-  output: string
-  execution_time_ms?: number
-}
+import { useIsMobile } from './hooks/useIsMobile'
+import { useVmExecution } from './hooks/useVmExecution'
 
 interface Example {
   id: string
@@ -37,24 +26,23 @@ interface Example {
 
 function App() {
   const editorRef = useRef<HTMLDivElement>(null)
-  const [editor, setEditor] = useState<monaco.editor.IStandaloneCodeEditor | null>(null)
-  const [output, setOutput] = useState<string>("")
   const analyzeTimeoutRef = useRef<number | null>(null)
-  const [editorWidth, setEditorWidth] = useState<number>(60) // 60% default
-  const [isResizing, setIsResizing] = useState(false)
-  const [wasmReady, setWasmReady] = useState(false)
-  const [vmState, setVmState] = useState<VmState>('idle')
-  const [inputValue, setInputValue] = useState<string>('')
   const inputRef = useRef<HTMLInputElement>(null)
   const outputEndRef = useRef<HTMLDivElement>(null)
+  
+  const [editor, setEditor] = useState<monaco.editor.IStandaloneCodeEditor | null>(null)
+  const [editorWidth, setEditorWidth] = useState<number>(60) // 60% default
+  const [isResizing, setIsResizing] = useState(false)
+  
+  const [wasmReady, setWasmReady] = useState(false)
   const [examples, setExamples] = useState<Example[]>([])
   const [selectedExample, setSelectedExample] = useState<string>('')
-  const [executionTime, setExecutionTime] = useState<number | null>(null)
   
-  // ANSI to HTML converter
+  const isMobile = useIsMobile(editor)
+  const { vmState, output, executionTime, inputValue, startProgram, stopProgram, sendInput, setInputValue, resetVm } = useVmExecution()
+  
   const ansiUp = useMemo(() => new AnsiUp(), [])
   
-  // Convert ANSI output to HTML
   const outputHtml = useMemo(() => {
     return ansiUp.ansi_to_html(output)
   }, [output, ansiUp])
@@ -100,14 +88,12 @@ function App() {
         const code = await response.text()
         editor.setValue(code)
         setSelectedExample(exampleId)
-        setOutput('')
-        setVmState('idle')
-        setExecutionTime(null)
+        resetVm()
       }
     } catch (error) {
       console.error('Failed to load example:', error)
     }
-  }, [editor, examples])
+  }, [editor, examples, resetVm])
 
   // Handle resize
   const handleMouseDown = useCallback(() => {
@@ -366,16 +352,18 @@ function App() {
         ],
       })
 
+      const mobile = window.innerWidth < 768
+      
       instance = monaco.editor.create(editorRef.current!, {
         value: '# Welcome to Pyhyeon!\n\n# Lists\nnums = [1, 2, 3, 4, 5]\nfor n in nums:\n  print(n)\n\n# Dicts\nperson = {"name": "Alice", "age": 30}\nprint(person["name"])\n',
         language: 'pyh',
         theme: 'pyhyeon-dark',
         automaticLayout: true,
         minimap: { enabled: false },
-        fontSize: 14,
-        lineHeight: 24,
+        fontSize: mobile ? 12 : 14,
+        lineHeight: mobile ? 20 : 24,
         fontFamily: "'Monaco', 'Menlo', 'Ubuntu Mono', monospace",
-        padding: { top: 50, bottom: 16 },
+        padding: { top: mobile ? 30 : 50, bottom: mobile ? 12 : 16 },
         scrollBeyondLastLine: false,
         renderLineHighlight: 'all',
         cursorBlinking: 'smooth',
@@ -439,23 +427,7 @@ function App() {
         }
         
         const code = instance!.getValue()
-        setOutput('')
-        setVmState('running')
-        setExecutionTime(null)
-        
-        try {
-          const result = start_program(code) as VmStateInfo
-          
-          setOutput(result.output)
-          setVmState(result.state as VmState)
-          if (result.execution_time_ms !== undefined) {
-            setExecutionTime(result.execution_time_ms)
-          }
-        } catch (e) {
-          setOutput(`${e}`)
-          setVmState('error')
-          console.error('Run error:', e)
-        }
+        startProgram(code)
       })
 
       // Auto-analyze on content change with debounce
@@ -483,7 +455,7 @@ function App() {
       disposeChange?.dispose()
       instance?.dispose()
     }
-  }, [autoAnalyze, wasmReady])
+  }, [autoAnalyze, wasmReady, startProgram])
 
   // Auto-scroll to bottom when output changes
   useEffect(() => {
@@ -505,54 +477,15 @@ function App() {
     }
     
     const code = editor.getValue()
-    setOutput('')
-    setVmState('running')
-    setExecutionTime(null)
-    
-    try {
-      const result = start_program(code) as VmStateInfo
-      
-      setOutput(result.output)
-      setVmState(result.state as VmState)
-      if (result.execution_time_ms !== undefined) {
-        setExecutionTime(result.execution_time_ms)
-      }
-    } catch (e) {
-      setOutput(`${e}`)
-      setVmState('error')
-      console.error('Run error:', e)
-    }
+    startProgram(code)
   }
 
   const onStop = () => {
-    try {
-      stop_program()
-      setVmState('idle')
-      setOutput(prev => prev + '\n[Program stopped]')
-    } catch (e) {
-      console.error('Stop error:', e)
-    }
+    stopProgram()
   }
 
   const onSendInput = () => {
-    if (!inputValue.trim() || vmState !== 'waiting_for_input') {
-      return
-    }
-
-    try {
-      const result = provide_input(inputValue) as VmStateInfo
-      
-      setOutput(prev => prev + result.output)
-      setVmState(result.state as VmState)
-      if (result.execution_time_ms !== undefined) {
-        setExecutionTime(result.execution_time_ms)
-      }
-      setInputValue('')
-    } catch (e) {
-      setOutput(prev => prev + `\nError: ${e}`)
-      setVmState('error')
-      console.error('Input error:', e)
-    }
+    sendInput(inputValue)
   }
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -570,52 +503,52 @@ function App() {
       <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
       
       {/* Header */}
-      <header className="relative z-10 border-b border-gray-800/50 bg-black/30 backdrop-blur-md px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <header className="relative z-10 border-b border-gray-800/50 bg-black/30 backdrop-blur-md px-3 md:px-6 py-2 md:py-4 flex items-center justify-between">
+        <div className="flex items-center gap-2 md:gap-4">
           <div className="flex items-center gap-2">
-            <Code2 className="w-8 h-8 text-blue-400" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            <Code2 className="w-6 h-6 md:w-8 md:h-8 text-blue-400" />
+            <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
               Pyhyeon
             </h1>
           </div>
-          <div className="text-sm text-gray-400">
+          <div className="text-xs md:text-sm text-gray-400 hidden sm:block">
             Playground
           </div>
         </div>
-        <nav className="flex items-center gap-4">
+        <nav className="flex items-center gap-2 md:gap-4">
           <a 
             href="https://github.com/csh1668/pyhyeon" 
             target="_blank" 
             rel="noreferrer" 
-            className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
+            className="text-gray-400 hover:text-white transition-colors p-1.5 md:p-2 rounded-lg hover:bg-white/10"
             aria-label="GitHub"
           >
-            <Github className="w-5 h-5" />
+            <Github className="w-4 h-4 md:w-5 md:h-5" />
           </a>
         </nav>
       </header>
 
       {/* Main workspace */}
-      <main className="relative z-10 h-[calc(100vh-80px)] flex">
+      <main className="relative z-10 h-[calc(100vh-56px)] md:h-[calc(100vh-80px)] flex flex-col md:flex-row">
         {/* Editor section */}
         <div 
-          className="flex flex-col bg-black/20 backdrop-blur-md border-r border-gray-800/50"
-          style={{ width: `${editorWidth}%` }}
+          className="flex flex-col bg-black/20 backdrop-blur-md border-b md:border-b-0 md:border-r border-gray-800/50 h-1/2 md:h-auto min-h-0"
+          style={{ width: isMobile ? '100%' : `${editorWidth}%` }}
         >
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800/50 bg-black/10">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-sm text-gray-300">
-                <Code2 className="w-4 h-4" />
-                main.pyh
+          <div className="flex items-center justify-between px-2 md:px-4 py-2 md:py-3 border-b border-gray-800/50 bg-black/10 flex-shrink-0">
+            <div className="flex items-center gap-2 md:gap-3">
+              <div className="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm text-gray-300">
+                <Code2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span className="hidden sm:inline">main.pyh</span>
               </div>
               
               {/* Examples dropdown */}
               {examples.length > 0 && (
-                <div className="flex items-center gap-2 border-l border-gray-700 pl-3">
-                  <FileCode className="w-4 h-4 text-gray-400" />
+                <div className="flex items-center gap-1.5 md:gap-2 border-l border-gray-700 pl-2 md:pl-3">
+                  <FileCode className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-400 hidden sm:block" />
                   <Select value={selectedExample} onValueChange={loadExample}>
-                    <SelectTrigger className="w-[240px] h-8 bg-black/30 border-gray-700 text-gray-200 text-xs">
-                      <SelectValue placeholder="예제 파일 선택..." />
+                    <SelectTrigger className="w-[120px] sm:w-[180px] md:w-[240px] h-7 md:h-8 bg-black/30 border-gray-700 text-gray-200 text-xs">
+                      <SelectValue placeholder="예제..." />
                     </SelectTrigger>
                     <SelectContent className="bg-gray-900 border-gray-700 text-gray-200 max-h-[400px]">
                       {Object.entries(
@@ -648,41 +581,45 @@ function App() {
             {vmState === 'running' || vmState === 'waiting_for_input' ? (
               <Button 
                 onClick={onStop}
-                className="bg-red-600 hover:bg-red-700 text-white"
+                className="bg-red-600 hover:bg-red-700 text-white text-xs md:text-sm"
                 size="sm"
                 title="Stop program"
               >
-                <StopCircle className="w-4 h-4 mr-2" />
-                Stop
+                <StopCircle className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1 md:mr-2" />
+                <span className="hidden sm:inline">Stop</span>
+                <span className="sm:hidden">정지</span>
               </Button>
             ) : (
               <Button 
                 onClick={onRun}
-                className="bg-green-600 hover:bg-green-700 text-white"
+                className="bg-green-600 hover:bg-green-700 text-white text-xs md:text-sm"
                 size="sm"
                 disabled={!wasmReady}
                 title="Run code (or press Ctrl+Enter)"
               >
                 {wasmReady ? (
                   <>
-                    <Play className="w-4 h-4 mr-2" />
-                    Run (Ctrl+Enter)
+                    <Play className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1 md:mr-2" />
+                    <span className="hidden md:inline">Run (Ctrl+Enter)</span>
+                    <span className="md:hidden hidden sm:inline">Run</span>
+                    <span className="sm:hidden">실행</span>
                   </>
                 ) : (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Loading...
+                    <Loader2 className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1 md:mr-2 animate-spin" />
+                    <span className="hidden sm:inline">Loading...</span>
+                    <span className="sm:hidden">...</span>
                   </>
                 )}
               </Button>
             )}
           </div>
-          <div className="flex-1" ref={editorRef} />
+          <div className="flex-1 min-h-0" ref={editorRef} />
         </div>
 
         {/* Resize handle */}
         <div 
-          className={`w-1 bg-gray-700/50 hover:bg-blue-500/50 cursor-col-resize transition-colors ${
+          className={`hidden md:block w-1 bg-gray-700/50 hover:bg-blue-500/50 cursor-col-resize transition-colors ${
             isResizing ? 'bg-blue-500/70' : ''
           }`}
           onMouseDown={handleMouseDown}
@@ -690,27 +627,28 @@ function App() {
 
         {/* Right panel */}
         <div 
-          className="flex flex-col bg-black/20 backdrop-blur-md"
-          style={{ width: `${100 - editorWidth}%` }}
+          className="flex flex-col bg-black/20 backdrop-blur-md h-1/2 md:h-auto min-h-0"
+          style={{ width: isMobile ? '100%' : `${100 - editorWidth}%` }}
         >
           {/* Output section */}
-          <div className="flex-1 flex flex-col">
-            <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-300 border-b border-gray-800/30 bg-black/10">
-              <Terminal className="w-4 h-4" />
-              Output
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex items-center gap-1.5 md:gap-2 px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-gray-300 border-b border-gray-800/30 bg-black/10 flex-shrink-0">
+              <Terminal className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <span className="hidden sm:inline">Output</span>
+              <span className="sm:hidden">출력</span>
               {vmState === 'waiting_for_input' && (
-                <span className="text-xs text-yellow-500 ml-2">Waiting for input...</span>
+                <span className="text-xs text-yellow-500 ml-1 md:ml-2">입력 대기...</span>
               )}
               {vmState === 'running' && (
-                <span className="text-xs text-blue-500 ml-2 flex items-center gap-1">
+                <span className="text-xs text-blue-500 ml-1 md:ml-2 flex items-center gap-1">
                   <Loader2 className="w-3 h-3 animate-spin" />
-                  Running...
+                  <span className="hidden sm:inline">Running...</span>
                 </span>
               )}
             </div>
-            <div className="flex-1 p-4 flex flex-col">
-              <div className="flex-1 bg-black/20 p-4 rounded-lg border border-gray-800/50 overflow-auto backdrop-blur-sm">
-                <pre className="text-sm text-gray-100 font-mono whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: outputHtml || 'Run your code to see output here...' }} />
+            <div className="flex-1 p-2 md:p-4 flex flex-col min-h-0">
+              <div className="flex-1 bg-black/20 p-2 md:p-4 rounded-lg border border-gray-800/50 overflow-auto backdrop-blur-sm min-h-0">
+                <pre className="text-xs md:text-sm text-gray-100 font-mono whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: outputHtml || 'Run your code to see output here...' }} />
                 {executionTime !== null && vmState === 'finished' && (
                   <div className="mt-3 pt-3 border-t border-gray-700/50">
                     <span className="text-xs text-gray-400">
@@ -721,23 +659,23 @@ function App() {
                 <div ref={outputEndRef} />
               </div>
               {vmState === 'waiting_for_input' && (
-                <div className="mt-4 flex gap-2">
+                <div className="mt-2 md:mt-4 flex gap-2 flex-shrink-0">
                   <input
                     ref={inputRef}
                     type="text"
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleInputKeyDown}
-                    placeholder="Enter input..."
-                    className="flex-1 px-3 py-2 bg-black/20 backdrop-blur-sm border border-gray-700 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="입력..."
+                    className="flex-1 px-2 md:px-3 py-1.5 md:py-2 bg-black/20 backdrop-blur-sm border border-gray-700 rounded-lg text-xs md:text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
                   />
                   <Button
                     onClick={onSendInput}
                     size="sm"
-                    className="bg-green-600 hover:bg-green-700"
+                    className="bg-green-600 hover:bg-green-700 px-2 md:px-3"
                     disabled={!inputValue.trim()}
                   >
-                    <Send className="w-4 h-4" />
+                    <Send className="w-3.5 h-3.5 md:w-4 md:h-4" />
                   </Button>
                 </div>
               )}

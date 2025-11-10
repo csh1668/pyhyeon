@@ -26,11 +26,15 @@ impl Vm {
         match ins {
             // ===== 상수 =====
             I::ConstI64(i) => self.handle_const_i64(*i),
+            I::ConstF64(f) => self.handle_const_f64(*f),
             I::ConstStr(i) => self.handle_const_str(*i, module),
             I::LoadConst(i) => self.handle_load_const(*i, module),
             I::True => self.handle_true(),
             I::False => self.handle_false(),
             I::None => self.handle_none(),
+
+            // ===== 스택 연산 =====
+            I::Pop => self.handle_pop(),
 
             // ===== 로컬/글로벌 변수 =====
             I::LoadLocal(ix) => self.handle_load_local(*ix),
@@ -43,6 +47,7 @@ impl Vm {
             I::Sub => self.handle_sub(module, io),
             I::Mul => self.handle_mul(module, io),
             I::Div => self.handle_div(module, io),
+            I::TrueDiv => self.handle_truediv(module, io),
             I::Mod => self.handle_mod(module, io),
             I::Neg => self.handle_neg(module, io),
             I::Pos => self.handle_pos(module, io),
@@ -87,9 +92,14 @@ impl Vm {
         Ok(ExecutionFlow::Continue)
     }
 
+    fn handle_const_f64(&mut self, f: f64) -> VmResult<ExecutionFlow> {
+        self.push(Value::Float(f))?;
+        Ok(ExecutionFlow::Continue)
+    }
+
     fn handle_const_str(&mut self, i: u32, module: &Module) -> VmResult<ExecutionFlow> {
         let s = module.string_pool[i as usize].clone();
-        self.push(self.make_string(s))?;
+        self.push(super::super::utils::make_string(s))?;
         Ok(ExecutionFlow::Continue)
     }
 
@@ -111,6 +121,13 @@ impl Vm {
 
     fn handle_none(&mut self) -> VmResult<ExecutionFlow> {
         self.push(Value::None)?;
+        Ok(ExecutionFlow::Continue)
+    }
+
+    // ==================== 스택 연산 핸들러 ====================
+
+    fn handle_pop(&mut self) -> VmResult<ExecutionFlow> {
+        self.pop()?;
         Ok(ExecutionFlow::Continue)
     }
 
@@ -170,11 +187,29 @@ impl Vm {
             return Ok(ExecutionFlow::Continue);
         }
 
-        // Fast path 2: String + String
+        // Fast path 2: Float + Float
+        if let (Value::Float(x), Value::Float(y)) = (&a, &b) {
+            self.push(Value::Float(x + y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 3: Int + Float (자동 변환)
+        if let (Value::Int(x), Value::Float(y)) = (&a, &b) {
+            self.push(Value::Float(*x as f64 + y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 4: Float + Int (자동 변환)
+        if let (Value::Float(x), Value::Int(y)) = (&a, &b) {
+            self.push(Value::Float(x + *y as f64))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 5: String + String
         if self.is_string_object(&a) && self.is_string_object(&b) {
-            let s1 = self.expect_string(&a)?;
-            let s2 = self.expect_string(&b)?;
-            self.push(self.make_string(s1.to_string() + s2))?;
+            let s1 = super::super::utils::expect_string(&a)?;
+            let s2 = super::super::utils::expect_string(&b)?;
+            self.push(super::super::utils::make_string(s1.to_string() + s2))?;
             return Ok(ExecutionFlow::Continue);
         }
 
@@ -231,9 +266,27 @@ impl Vm {
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
 
-        // Fast path: Int - Int
+        // Fast path 1: Int - Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Int(x.wrapping_sub(*y)))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 2: Float - Float
+        if let (Value::Float(x), Value::Float(y)) = (&a, &b) {
+            self.push(Value::Float(x - y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 3: Int - Float
+        if let (Value::Int(x), Value::Float(y)) = (&a, &b) {
+            self.push(Value::Float(*x as f64 - y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 4: Float - Int
+        if let (Value::Float(x), Value::Int(y)) = (&a, &b) {
+            self.push(Value::Float(x - *y as f64))?;
             return Ok(ExecutionFlow::Continue);
         }
 
@@ -294,13 +347,13 @@ impl Vm {
         if self.is_string_object(&a)
             && let Value::Int(n) = b
         {
-            let s = self.expect_string(&a)?;
+            let s = super::super::utils::expect_string(&a)?;
             let result = if n < 0 {
                 String::new()
             } else {
                 s.repeat(n as usize)
             };
-            self.push(self.make_string(result))?;
+            self.push(super::super::utils::make_string(result))?;
             return Ok(ExecutionFlow::Continue);
         }
 
@@ -308,13 +361,31 @@ impl Vm {
         if let Value::Int(n) = a
             && self.is_string_object(&b)
         {
-            let s = self.expect_string(&b)?;
+            let s = super::super::utils::expect_string(&b)?;
             let result = if n < 0 {
                 String::new()
             } else {
                 s.repeat(n as usize)
             };
-            self.push(self.make_string(result))?;
+            self.push(super::super::utils::make_string(result))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 4: Float * Float
+        if let (Value::Float(x), Value::Float(y)) = (&a, &b) {
+            self.push(Value::Float(x * y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 5: Int * Float
+        if let (Value::Int(x), Value::Float(y)) = (&a, &b) {
+            self.push(Value::Float(*x as f64 * y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 6: Float * Int
+        if let (Value::Float(x), Value::Int(y)) = (&a, &b) {
+            self.push(Value::Float(x * *y as f64))?;
             return Ok(ExecutionFlow::Continue);
         }
 
@@ -365,7 +436,7 @@ impl Vm {
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
 
-        // Fast path: Int // Int
+        // Fast path 1: Int // Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             if *y == 0 {
                 return Err(err(
@@ -374,6 +445,42 @@ impl Vm {
                 ));
             }
             self.push(Value::Int(x / y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 2: Float // Float
+        if let (Value::Float(x), Value::Float(y)) = (&a, &b) {
+            if *y == 0.0 {
+                return Err(err(
+                    VmErrorKind::ZeroDivision,
+                    "float floor division by zero".into(),
+                ));
+            }
+            self.push(Value::Float((x / y).floor()))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 3: Int // Float
+        if let (Value::Int(x), Value::Float(y)) = (&a, &b) {
+            if *y == 0.0 {
+                return Err(err(
+                    VmErrorKind::ZeroDivision,
+                    "float floor division by zero".into(),
+                ));
+            }
+            self.push(Value::Float(((*x as f64) / y).floor()))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 4: Float // Int
+        if let (Value::Float(x), Value::Int(y)) = (&a, &b) {
+            if *y == 0 {
+                return Err(err(
+                    VmErrorKind::ZeroDivision,
+                    "float floor division by zero".into(),
+                ));
+            }
+            self.push(Value::Float((x / (*y as f64)).floor()))?;
             return Ok(ExecutionFlow::Continue);
         }
 
@@ -424,7 +531,7 @@ impl Vm {
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
 
-        // Fast path: Int % Int
+        // Fast path 1: Int % Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             if *y == 0 {
                 return Err(err(
@@ -433,6 +540,42 @@ impl Vm {
                 ));
             }
             self.push(Value::Int(x % y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 2: Float % Float
+        if let (Value::Float(x), Value::Float(y)) = (&a, &b) {
+            if *y == 0.0 {
+                return Err(err(
+                    VmErrorKind::ZeroDivision,
+                    "float modulo by zero".into(),
+                ));
+            }
+            self.push(Value::Float(x % y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 3: Int % Float
+        if let (Value::Int(x), Value::Float(y)) = (&a, &b) {
+            if *y == 0.0 {
+                return Err(err(
+                    VmErrorKind::ZeroDivision,
+                    "float modulo by zero".into(),
+                ));
+            }
+            self.push(Value::Float((*x as f64) % y))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 4: Float % Int
+        if let (Value::Float(x), Value::Int(y)) = (&a, &b) {
+            if *y == 0 {
+                return Err(err(
+                    VmErrorKind::ZeroDivision,
+                    "float modulo by zero".into(),
+                ));
+            }
+            self.push(Value::Float(x % (*y as f64)))?;
             return Ok(ExecutionFlow::Continue);
         }
 
@@ -476,6 +619,55 @@ impl Vm {
         }
     }
 
+    fn handle_truediv<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<ExecutionFlow> {
+        let (b, a) = (self.pop()?, self.pop()?);
+
+        // True division always returns Float
+        let x_f64 = match a {
+            Value::Int(x) => x as f64,
+            Value::Float(x) => x,
+            _ => {
+                return Err(err(
+                    VmErrorKind::TypeError("truediv"),
+                    format!(
+                        "unsupported operand types for /: '{}' and '{}'",
+                        self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
+                        self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                    ),
+                ));
+            }
+        };
+
+        let y_f64 = match b {
+            Value::Int(y) => y as f64,
+            Value::Float(y) => y,
+            _ => {
+                return Err(err(
+                    VmErrorKind::TypeError("truediv"),
+                    format!(
+                        "unsupported operand types for /: '{}' and '{}'",
+                        self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
+                        self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                    ),
+                ));
+            }
+        };
+
+        if y_f64 == 0.0 {
+            return Err(err(
+                VmErrorKind::ZeroDivision,
+                "division by zero".into(),
+            ));
+        }
+
+        self.push(Value::Float(x_f64 / y_f64))?;
+        Ok(ExecutionFlow::Continue)
+    }
+
     fn handle_neg<IO: RuntimeIo>(
         &mut self,
         module: &mut Module,
@@ -483,9 +675,15 @@ impl Vm {
     ) -> VmResult<ExecutionFlow> {
         let a = self.pop()?;
 
-        // Fast path: -Int
+        // Fast path 1: -Int
         if let Value::Int(x) = a {
             self.push(Value::Int(-x))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 2: -Float
+        if let Value::Float(x) = a {
+            self.push(Value::Float(-x))?;
             return Ok(ExecutionFlow::Continue);
         }
 
@@ -533,9 +731,15 @@ impl Vm {
     ) -> VmResult<ExecutionFlow> {
         let a = self.pop()?;
 
-        // Fast path: +Int
+        // Fast path 1: +Int
         if let Value::Int(x) = a {
             self.push(Value::Int(x))?;
+            return Ok(ExecutionFlow::Continue);
+        }
+
+        // Fast path 2: +Float
+        if let Value::Float(x) = a {
+            self.push(Value::Float(x))?;
             return Ok(ExecutionFlow::Continue);
         }
 
@@ -589,6 +793,9 @@ impl Vm {
         if matches!(
             (&a, &b),
             (Value::Int(_), Value::Int(_))
+                | (Value::Float(_), Value::Float(_))
+                | (Value::Int(_), Value::Float(_))
+                | (Value::Float(_), Value::Int(_))
                 | (Value::Bool(_), Value::Bool(_))
                 | (Value::None, Value::None)
         ) {
@@ -598,8 +805,8 @@ impl Vm {
 
         // String 비교
         if self.is_string_object(&a) && self.is_string_object(&b) {
-            let s1 = self.expect_string(&a)?;
-            let s2 = self.expect_string(&b)?;
+            let s1 = super::super::utils::expect_string(&a)?;
+            let s2 = super::super::utils::expect_string(&b)?;
             self.push(Value::Bool(s1 == s2))?;
             return Ok(ExecutionFlow::Continue);
         }
@@ -650,6 +857,9 @@ impl Vm {
         if matches!(
             (&a, &b),
             (Value::Int(_), Value::Int(_))
+                | (Value::Float(_), Value::Float(_))
+                | (Value::Int(_), Value::Float(_))
+                | (Value::Float(_), Value::Int(_))
                 | (Value::Bool(_), Value::Bool(_))
                 | (Value::None, Value::None)
         ) {
@@ -659,8 +869,8 @@ impl Vm {
 
         // String 비교
         if self.is_string_object(&a) && self.is_string_object(&b) {
-            let s1 = self.expect_string(&a)?;
-            let s2 = self.expect_string(&b)?;
+            let s1 = super::super::utils::expect_string(&a)?;
+            let s2 = super::super::utils::expect_string(&b)?;
             self.push(Value::Bool(s1 != s2))?;
             return Ok(ExecutionFlow::Continue);
         }
@@ -707,16 +917,33 @@ impl Vm {
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
 
-        // Fast path: Int < Int
+        // Fast path 1: Int < Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Bool(*x < *y))?;
             return Ok(ExecutionFlow::Continue);
         }
 
-        // Fast path: String < String
+        // Fast path 2: Float comparisons (Float-Float, Int-Float, Float-Int)
+        match (&a, &b) {
+            (Value::Float(x), Value::Float(y)) => {
+                self.push(Value::Bool(x < y))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            (Value::Int(x), Value::Float(y)) => {
+                self.push(Value::Bool((*x as f64) < *y))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            (Value::Float(x), Value::Int(y)) => {
+                self.push(Value::Bool(*x < (*y as f64)))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            _ => {}
+        }
+
+        // Fast path 3: String < String
         if self.is_string_object(&a) && self.is_string_object(&b) {
-            let s1 = self.expect_string(&a)?;
-            let s2 = self.expect_string(&b)?;
+            let s1 = super::super::utils::expect_string(&a)?;
+            let s2 = super::super::utils::expect_string(&b)?;
             self.push(Value::Bool(s1 < s2))?;
             return Ok(ExecutionFlow::Continue);
         }
@@ -768,16 +995,33 @@ impl Vm {
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
 
-        // Fast path: Int <= Int
+        // Fast path 1: Int <= Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Bool(*x <= *y))?;
             return Ok(ExecutionFlow::Continue);
         }
 
-        // Fast path: String <= String
+        // Fast path 2: Float comparisons
+        match (&a, &b) {
+            (Value::Float(x), Value::Float(y)) => {
+                self.push(Value::Bool(x <= y))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            (Value::Int(x), Value::Float(y)) => {
+                self.push(Value::Bool((*x as f64) <= *y))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            (Value::Float(x), Value::Int(y)) => {
+                self.push(Value::Bool(*x <= (*y as f64)))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            _ => {}
+        }
+
+        // Fast path 3: String <= String
         if self.is_string_object(&a) && self.is_string_object(&b) {
-            let s1 = self.expect_string(&a)?;
-            let s2 = self.expect_string(&b)?;
+            let s1 = super::super::utils::expect_string(&a)?;
+            let s2 = super::super::utils::expect_string(&b)?;
             self.push(Value::Bool(s1 <= s2))?;
             return Ok(ExecutionFlow::Continue);
         }
@@ -829,16 +1073,33 @@ impl Vm {
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
 
-        // Fast path: Int > Int
+        // Fast path 1: Int > Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Bool(*x > *y))?;
             return Ok(ExecutionFlow::Continue);
         }
 
-        // Fast path: String > String
+        // Fast path 2: Float comparisons
+        match (&a, &b) {
+            (Value::Float(x), Value::Float(y)) => {
+                self.push(Value::Bool(x > y))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            (Value::Int(x), Value::Float(y)) => {
+                self.push(Value::Bool((*x as f64) > *y))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            (Value::Float(x), Value::Int(y)) => {
+                self.push(Value::Bool(*x > (*y as f64)))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            _ => {}
+        }
+
+        // Fast path 3: String > String
         if self.is_string_object(&a) && self.is_string_object(&b) {
-            let s1 = self.expect_string(&a)?;
-            let s2 = self.expect_string(&b)?;
+            let s1 = super::super::utils::expect_string(&a)?;
+            let s2 = super::super::utils::expect_string(&b)?;
             self.push(Value::Bool(s1 > s2))?;
             return Ok(ExecutionFlow::Continue);
         }
@@ -890,16 +1151,33 @@ impl Vm {
     ) -> VmResult<ExecutionFlow> {
         let (b, a) = (self.pop()?, self.pop()?);
 
-        // Fast path: Int >= Int
+        // Fast path 1: Int >= Int
         if let (Value::Int(x), Value::Int(y)) = (&a, &b) {
             self.push(Value::Bool(*x >= *y))?;
             return Ok(ExecutionFlow::Continue);
         }
 
-        // Fast path: String >= String
+        // Fast path 2: Float comparisons
+        match (&a, &b) {
+            (Value::Float(x), Value::Float(y)) => {
+                self.push(Value::Bool(x >= y))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            (Value::Int(x), Value::Float(y)) => {
+                self.push(Value::Bool((*x as f64) >= *y))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            (Value::Float(x), Value::Int(y)) => {
+                self.push(Value::Bool(*x >= (*y as f64)))?;
+                return Ok(ExecutionFlow::Continue);
+            }
+            _ => {}
+        }
+
+        // Fast path 3: String >= String
         if self.is_string_object(&a) && self.is_string_object(&b) {
-            let s1 = self.expect_string(&a)?;
-            let s2 = self.expect_string(&b)?;
+            let s1 = super::super::utils::expect_string(&a)?;
+            let s2 = super::super::utils::expect_string(&b)?;
             self.push(Value::Bool(s1 >= s2))?;
             return Ok(ExecutionFlow::Continue);
         }
@@ -1035,7 +1313,7 @@ impl Vm {
                 .ok_or_else(|| err(VmErrorKind::StackUnderflow, "stack underflow".into()))?;
             // Object에서 String 프롬프트 추출
             if self.is_string_object(prompt) {
-                Some(self.expect_string(prompt)?)
+                Some(super::super::utils::expect_string(prompt)?)
             } else {
                 return Err(err(
                     VmErrorKind::TypeError("input"),
@@ -1055,7 +1333,7 @@ impl Vm {
                     self.pop()?;
                 }
                 // input 결과를 String Object로 반환
-                self.push(self.make_string(line.trim().to_string()))?;
+                self.push(super::super::utils::make_string(line.trim().to_string()))?;
                 Ok(ExecutionFlow::Continue)
             }
             ReadResult::WaitingForInput => {
@@ -1096,7 +1374,7 @@ impl Vm {
                     // 사용자 정의 클래스 호출
                     ObjectData::UserClass { class_id, methods } => {
                         // 인스턴스 생성
-                        let instance_value = self.make_user_instance(*class_id);
+                        let instance_value = super::super::utils::make_user_instance(*class_id);
 
                         // __init__ 메서드가 있으면 호출
                         if let Some(&init_func_id) = methods.get("__init__") {

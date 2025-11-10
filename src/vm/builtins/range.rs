@@ -2,11 +2,10 @@ use super::super::bytecode::Value;
 use super::super::type_def::{
     Arity, BuiltinClassType, MethodImpl, NativeMethod, TypeDef, TypeFlags,
 };
+use super::super::utils::make_range;
 use super::super::value::{BuiltinInstanceData, Object, ObjectData};
 use super::super::{VmError, VmErrorKind, VmResult, err};
 use super::{TYPE_RANGE, type_name};
-use std::cell::RefCell;
-use std::rc::Rc;
 
 /// range() 생성자
 ///
@@ -64,21 +63,6 @@ pub fn create_range(args: Vec<Value>) -> VmResult<Value> {
     };
 
     Ok(make_range(start, stop, step))
-}
-
-/// range 인스턴스 생성 헬퍼
-fn make_range(current: i64, stop: i64, step: i64) -> Value {
-    Value::Object(Rc::new(Object::new(
-        TYPE_RANGE,
-        ObjectData::BuiltinInstance {
-            class_type: BuiltinClassType::Range,
-            data: BuiltinInstanceData::Range {
-                current: RefCell::new(current),
-                stop,
-                step,
-            },
-        },
-    )))
 }
 
 /// Value에서 int 추출

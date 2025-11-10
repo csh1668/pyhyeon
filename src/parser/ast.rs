@@ -8,6 +8,7 @@ pub enum Literal {
     Bool(bool),
     Int(i64),
     String(String),
+    Float(f64),
     None,
 }
 
@@ -23,6 +24,7 @@ pub enum BinaryOp {
     Add,
     Subtract,
     Multiply,
+    Divide,
     FloorDivide,
     Modulo,
     Equal,

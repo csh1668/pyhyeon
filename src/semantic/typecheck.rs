@@ -9,6 +9,7 @@ enum Ty {
     Int,
     Bool,
     String,
+    Float,
     NoneType,
     Unknown,
 }
@@ -274,6 +275,7 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
             crate::parser::ast::Literal::Bool(_) => Ty::Bool,
             crate::parser::ast::Literal::Int(_) => Ty::Int,
             crate::parser::ast::Literal::String(_) => Ty::String,
+            crate::parser::ast::Literal::Float(_) => Ty::Float,
             crate::parser::ast::Literal::None => Ty::NoneType,
         }),
         Expr::Variable(name) => Ok(tenv.get(name).unwrap_or(Ty::Unknown)),
@@ -281,7 +283,7 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
             let t = tc_expr(inner, tenv, ctx)?;
             match op {
                 UnaryOp::Not => expect_bool(t, expr.1.clone()),
-                UnaryOp::Negate | UnaryOp::Pos => expect_int(t, expr.1.clone()),
+                UnaryOp::Negate | UnaryOp::Pos => expect_int_or_float(t, expr.1.clone()),
             }
         }
         Expr::Binary { op, left, right } => {
@@ -290,8 +292,11 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
             match op {
                 BinaryOp::Add => match (tl, tr) {
                     (Ty::Int, Ty::Int) => Ok(Ty::Int),
+                    (Ty::Float, Ty::Float) => Ok(Ty::Float),
+                    (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => Ok(Ty::Float),
                     (Ty::String, Ty::String) => Ok(Ty::String),
                     (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Int),
+                    (Ty::Unknown, Ty::Float) | (Ty::Float, Ty::Unknown) => Ok(Ty::Float),
                     (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::String),
                     (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
                     _ => Err(SemanticError {
@@ -304,8 +309,11 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                 },
                 BinaryOp::Multiply => match (tl, tr) {
                     (Ty::Int, Ty::Int) => Ok(Ty::Int),
+                    (Ty::Float, Ty::Float) => Ok(Ty::Float),
+                    (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => Ok(Ty::Float),
                     (Ty::String, Ty::Int) | (Ty::Int, Ty::String) => Ok(Ty::String),
                     (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Int),
+                    (Ty::Unknown, Ty::Float) | (Ty::Float, Ty::Unknown) => Ok(Ty::Float),
                     (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::String),
                     (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
                     _ => Err(SemanticError {
@@ -316,20 +324,34 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                         span: expr.1.clone(),
                     }),
                 },
-                BinaryOp::Subtract | BinaryOp::FloorDivide | BinaryOp::Modulo => {
-                    expect_int_pair(tl, tr, expr.1.clone()).map(|_| Ty::Int)
+                BinaryOp::Subtract | BinaryOp::Modulo => {
+                    expect_numeric_pair(tl, tr, expr.1.clone())
+                }
+                BinaryOp::Divide => {
+                    // / 연산은 항상 Float 반환 (Python 3 스타일)
+                    expect_numeric_pair(tl, tr, expr.1.clone()).map(|_| Ty::Float)
+                }
+                BinaryOp::FloorDivide => {
+                    // // 연산은 피연산자 타입 유지
+                    expect_numeric_pair(tl, tr, expr.1.clone())
                 }
                 BinaryOp::Less
                 | BinaryOp::LessEqual
                 | BinaryOp::Greater
                 | BinaryOp::GreaterEqual => match (tl, tr) {
                     (Ty::Int, Ty::Int) => Ok(Ty::Bool),
+                    (Ty::Float, Ty::Float) => Ok(Ty::Bool),
+                    (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => Ok(Ty::Bool),
                     (Ty::String, Ty::String) => Ok(Ty::Bool),
                     (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Bool),
+                    (Ty::Unknown, Ty::Float) | (Ty::Float, Ty::Unknown) => Ok(Ty::Bool),
                     (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::Bool),
                     (Ty::Unknown, Ty::Unknown) => Ok(Ty::Bool),
                     _ => Err(SemanticError {
-                        message: format!("TypeError: cannot compare {:?} and {:?}", tl, tr),
+                        message: format!(
+                            "TypeError: cannot compare {:?} and {:?}",
+                            tl, tr
+                        ),
                         span: expr.1.clone(),
                     }),
                 },
@@ -397,6 +419,10 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                         "int" => {
                             let _ = tc_expr(&args[0], tenv, ctx)?;
                             return Ok(Ty::Int);
+                        }
+                        "float" => {
+                            let _ = tc_expr(&args[0], tenv, ctx)?;
+                            return Ok(Ty::Float);
                         }
                         "bool" => {
                             let _ = tc_expr(&args[0], tenv, ctx)?;
@@ -524,10 +550,11 @@ fn ensure_bool(
     Ok(())
 }
 
-fn expect_int(t: Ty, span: crate::types::Span) -> SemanticResult<Ty> {
+fn expect_int_or_float(t: Ty, span: crate::types::Span) -> SemanticResult<Ty> {
     match t {
         Ty::Int => Ok(Ty::Int),
-        Ty::Unknown => Ok(Ty::Int), // optimistic
+        Ty::Float => Ok(Ty::Float),
+        Ty::Unknown => Ok(Ty::Unknown), // optimistic
         _ => Err(SemanticError {
             message: format!("TypeError: expected Int, got {:?}", t),
             span,
@@ -546,12 +573,17 @@ fn expect_bool(t: Ty, span: crate::types::Span) -> SemanticResult<Ty> {
     }
 }
 
-fn expect_int_pair(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResult<()> {
+
+fn expect_numeric_pair(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResult<Ty> {
     match (t1, t2) {
-        (Ty::Int, Ty::Int) => Ok(()),
-        (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) | (Ty::Unknown, Ty::Unknown) => Ok(()),
+        (Ty::Int, Ty::Int) => Ok(Ty::Int),
+        (Ty::Float, Ty::Float) => Ok(Ty::Float),
+        (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => Ok(Ty::Float), // 혼합 연산은 Float로
+        (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Int),
+        (Ty::Unknown, Ty::Float) | (Ty::Float, Ty::Unknown) => Ok(Ty::Float),
+        (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
         _ => Err(SemanticError {
-            message: format!("TypeError: expected Int and Int, got {:?} and {:?}", t1, t2),
+            message: format!("TypeError: expected numeric types, got {:?} and {:?}", t1, t2),
             span,
         }),
     }
@@ -573,6 +605,9 @@ fn expect_int_pair(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResult<(
 
 fn expect_same_or_unknown(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResult<()> {
     if t1 == Ty::Unknown || t2 == Ty::Unknown || t1 == t2 {
+        Ok(())
+    } else if (t1 == Ty::Int && t2 == Ty::Float) || (t1 == Ty::Float && t2 == Ty::Int) {
+        // Int-Float 비교 허용
         Ok(())
     } else {
         Err(SemanticError {

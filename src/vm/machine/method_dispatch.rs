@@ -1,8 +1,10 @@
 use super::super::bytecode::{Module, Value};
-use super::super::type_def::{Arity, MethodImpl, TYPE_BOOL, TYPE_INT, TYPE_NONE, TYPE_STR};
+use super::super::type_def::{Arity, MethodImpl, TYPE_BOOL, TYPE_FLOAT, TYPE_INT, TYPE_NONE, TYPE_STR};
+use super::super::utils::expect_string;
 use super::super::value::ObjectData;
 use super::{Vm, VmErrorKind, VmResult, err};
 use crate::runtime_io::RuntimeIo;
+use crate::vm::builtins::float;
 
 impl Vm {
     // ========== 통일된 메서드 조회 시스템 ==========
@@ -20,6 +22,7 @@ impl Vm {
     pub(super) fn get_type_id(&self, value: &Value) -> VmResult<u16> {
         match value {
             Value::Int(_) => Ok(TYPE_INT),
+            Value::Float(_) => Ok(TYPE_FLOAT),
             Value::Bool(_) => Ok(TYPE_BOOL),
             Value::None => Ok(TYPE_NONE),
             Value::Object(obj) => Ok(obj.type_id),
@@ -280,6 +283,7 @@ impl Vm {
             NM::IntSub => int::int_sub(receiver, args),
             NM::IntMul => int::int_mul(receiver, args),
             NM::IntFloorDiv => int::int_floordiv(receiver, args),
+            NM::IntTrueDiv => int::int_truediv(receiver, args),
             NM::IntMod => int::int_mod(receiver, args),
             NM::IntNeg => int::int_neg(receiver, args),
             NM::IntPos => int::int_pos(receiver, args),
@@ -289,6 +293,22 @@ impl Vm {
             NM::IntGe => int::int_ge(receiver, args),
             NM::IntEq => int::int_eq(receiver, args),
             NM::IntNe => int::int_ne(receiver, args),
+
+            // Float 매직 메서드들
+            NM::FloatAdd => float::float_add(receiver, args),
+            NM::FloatSub => float::float_sub(receiver, args),
+            NM::FloatMul => float::float_mul(receiver, args),
+            NM::FloatTrueDiv => float::float_true_div(receiver, args),
+            NM::FloatFloorDiv => float::float_floor_div(receiver, args),
+            NM::FloatMod => float::float_mod(receiver, args),
+            NM::FloatNeg => float::float_neg(receiver, args),
+            NM::FloatPos => float::float_pos(receiver, args),
+            NM::FloatLt => float::float_lt(receiver, args),
+            NM::FloatLe => float::float_le(receiver, args),
+            NM::FloatGt => float::float_gt(receiver, args),
+            NM::FloatGe => float::float_ge(receiver, args),
+            NM::FloatEq => float::float_eq(receiver, args),
+            NM::FloatNe => float::float_ne(receiver, args),
 
             // String 매직 메서드들
             NM::StrAdd => str_builtin::str_add(receiver, args),
@@ -343,22 +363,6 @@ impl Vm {
             NM::DictIter => dict_methods::dict_iter(receiver, args),
             NM::DictHasNext => dict_methods::dict_has_next(receiver, args),
             NM::DictNext => dict_methods::dict_next(receiver, args),
-        }
-    }
-
-    /// Value에서 String 데이터 추출
-    ///
-    /// Object의 ObjectData::String에서 문자열 참조를 가져옵니다.
-    pub(super) fn expect_string<'a>(&self, v: &'a Value) -> VmResult<&'a str> {
-        match v {
-            Value::Object(obj) => match &obj.data {
-                ObjectData::String(s) => Ok(s),
-                _ => Err(err(
-                    VmErrorKind::TypeError("str"),
-                    "expected string object".into(),
-                )),
-            },
-            _ => Err(err(VmErrorKind::TypeError("str"), "expected String".into())),
         }
     }
 

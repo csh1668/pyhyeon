@@ -59,7 +59,13 @@ const RANGE: Builtin = Builtin {
     min_arity: 1, // range(stop) or range(start, stop) or range(start, stop, step)
 };
 
-static REGISTRY: &[Builtin] = &[PRINT, INPUT, INT, BOOL, STR, LEN, RANGE];
+const FLOAT: Builtin = Builtin {
+    name: "float",
+    params: &["x"],
+    min_arity: 1,
+};
+
+static REGISTRY: &[Builtin] = &[PRINT, INPUT, INT, BOOL, STR, LEN, RANGE, FLOAT];
 
 pub fn all() -> &'static [Builtin] {
     REGISTRY

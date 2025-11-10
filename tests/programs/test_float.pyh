@@ -1,0 +1,64 @@
+# Float 타입 기본 테스트
+
+# Float 리터럴
+x = 3.14
+print(x)
+
+# float() 함수
+y = float(42)
+print(y)
+
+z = float("2.5")
+print(z)
+
+# Float 산술 연산
+a = 1.5 + 2.5
+print(a)
+
+b = 10.0 - 3.5
+print(b)
+
+c = 2.0 * 3.0
+print(c)
+
+d = 15.0 / 3.0
+print(d)
+
+e = 7.0 // 2.0
+print(e)
+
+f = 7.5 % 2.0
+print(f)
+
+# Int-Float 혼합 연산
+g = 10 + 2.5
+print(g)
+
+h = 20.0 - 5
+print(h)
+
+i = 3 * 2.5
+print(i)
+
+j = 10 / 4
+print(j)
+
+# Float 비교
+print(3.5 > 2.5)
+print(1.5 < 2.5)
+print(5.0 == 5.0)
+print(1.5 != 2.5)
+
+# Int-Float 비교
+print(3 < 3.5)
+print(4.0 > 3)
+
+
+
+
+
+
+
+
+
+

@@ -80,6 +80,7 @@ impl Compiler {
             }
             Stmt::Expr(e) => {
                 self.emit_expr(e, fun);
+                fun.code.push(I::Pop);
             }
             Stmt::Return(e) => {
                 self.emit_expr(e, fun);
@@ -297,6 +298,7 @@ impl Compiler {
     fn emit_expr(&mut self, expr: &ExprS, fun: &mut FunctionCode) {
         match &expr.0 {
             Expr::Literal(Literal::Int(i)) => fun.code.push(I::ConstI64(*i)),
+            Expr::Literal(Literal::Float(f)) => fun.code.push(I::ConstF64(*f)),
             Expr::Literal(Literal::Bool(b)) => fun.code.push(if *b { I::True } else { I::False }),
             Expr::Literal(Literal::String(s)) => {
                 let str_id = get_or_add_string(&mut self.module, s.clone());
@@ -353,6 +355,7 @@ impl Compiler {
                             B::Add => fun.code.push(I::Add),
                             B::Subtract => fun.code.push(I::Sub),
                             B::Multiply => fun.code.push(I::Mul),
+                            B::Divide => fun.code.push(I::TrueDiv),
                             B::FloorDivide => fun.code.push(I::Div),
                             B::Modulo => fun.code.push(I::Mod),
                             B::Equal => fun.code.push(I::Eq),
@@ -527,6 +530,7 @@ impl Compiler {
             }
             Stmt::Expr(e) => {
                 self.emit_expr_with_locals(e, fun, locals);
+                fun.code.push(I::Pop);
             }
             Stmt::Return(e) => {
                 self.emit_expr_with_locals(e, fun, locals);
@@ -722,6 +726,7 @@ impl Compiler {
     ) {
         match &expr.0 {
             Expr::Literal(Literal::Int(i)) => fun.code.push(I::ConstI64(*i)),
+            Expr::Literal(Literal::Float(f)) => fun.code.push(I::ConstF64(*f)),
             Expr::Literal(Literal::Bool(b)) => fun.code.push(if *b { I::True } else { I::False }),
             Expr::Literal(Literal::String(s)) => {
                 let str_id = get_or_add_string(&mut self.module, s.clone());
@@ -780,6 +785,7 @@ impl Compiler {
                             B::Add => fun.code.push(I::Add),
                             B::Subtract => fun.code.push(I::Sub),
                             B::Multiply => fun.code.push(I::Mul),
+                            B::Divide => fun.code.push(I::TrueDiv),
                             B::FloorDivide => fun.code.push(I::Div),
                             B::Modulo => fun.code.push(I::Mod),
                             B::Equal => fun.code.push(I::Eq),
@@ -962,6 +968,7 @@ fn builtin_id(name: &str) -> Option<u8> {
         "str" => Some(4),
         "len" => Some(5),
         "range" => Some(6),
+        "float" => Some(7),
         _ => None,
     }
 }

@@ -8,6 +8,7 @@ pub enum Value {
     // Primitive
     Int(i64),
     Bool(bool),
+    Float(f64),
     None,
 
     #[serde(skip)]
@@ -19,6 +20,9 @@ impl PartialEq for Value {
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Float(a), Value::Float(b)) => a == b,
+            (Value::Int(a), Value::Float(b)) => *a as f64 == *b,
+            (Value::Float(a), Value::Int(b)) => *a == *b as f64,
             (Value::None, Value::None) => true,
             (Value::Object(a), Value::Object(b)) => {
                 if Rc::ptr_eq(a, b) {
@@ -47,15 +51,19 @@ pub struct ClassDef {
                                        // 나중에: base_class: Option<u16> (상속)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Instruction {
     // constants
     ConstI64(i64),
+    ConstF64(f64),
     ConstStr(u32),
     LoadConst(u32), // Load constant from consts array
     True,
     False,
     None,
+
+    // stack operations
+    Pop,
 
     // locals/globals
     LoadLocal(u16),
@@ -67,7 +75,8 @@ pub enum Instruction {
     Add,
     Sub,
     Mul,
-    Div,
+    Div,      // Floor division (//)
+    TrueDiv,  // True division (/)
     Mod,
     Neg,
     Pos,
@@ -169,7 +178,7 @@ impl Default for Module {
 impl Module {
     /// 새 모듈 생성 및 builtin 타입 초기화
     ///
-    /// 7개의 builtin 타입(int, bool, str, NoneType, range, list, dict)을 자동으로 초기화합니다.
+    /// 8개의 builtin 타입(int, bool, str, NoneType, range, list, dict, float)을 자동으로 초기화합니다.
     /// 타입 정의는 `type_def::init_builtin_types()`에서 가져옵니다.
     pub fn new() -> Self {
         Module {
@@ -191,6 +200,7 @@ pub const BUILTIN_BOOL_ID: u8 = 3;
 pub const BUILTIN_STR_ID: u8 = 4;
 pub const BUILTIN_LEN_ID: u8 = 5;
 pub const BUILTIN_RANGE_ID: u8 = 6;
+pub const BUILTIN_FLOAT_ID: u8 = 7;
 
 #[cfg(test)]
 mod tests {
@@ -201,8 +211,8 @@ mod tests {
     fn test_module_type_table_initialization() {
         let module = Module::new();
 
-        // 타입 테이블이 7개 (int, bool, str, NoneType, range, list, dict) 초기화되어야 함
-        assert_eq!(module.types.len(), 7);
+        // 타입 테이블이 8개 (int, bool, str, NoneType, range, list, dict, float) 초기화되어야 함
+        assert_eq!(module.types.len(), 8);
 
         // 각 타입의 이름 확인
         assert_eq!(module.types[TYPE_INT as usize].name, "int");
@@ -212,6 +222,7 @@ mod tests {
         assert_eq!(module.types[TYPE_RANGE as usize].name, "range");
         assert_eq!(module.types[TYPE_LIST as usize].name, "list");
         assert_eq!(module.types[TYPE_DICT as usize].name, "dict");
+        assert_eq!(module.types[TYPE_FLOAT as usize].name, "float");
     }
 
     #[test]

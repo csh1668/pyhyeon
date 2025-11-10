@@ -65,6 +65,7 @@ pub enum NativeMethod {
     IntSub,
     IntMul,
     IntFloorDiv,
+    IntTrueDiv,
     IntMod,
     IntNeg,
     IntPos,
@@ -74,6 +75,22 @@ pub enum NativeMethod {
     IntGe,
     IntEq,
     IntNe,
+
+    // ========== Float 매직 메서드들 ==========
+    FloatAdd,
+    FloatSub,
+    FloatMul,
+    FloatTrueDiv,
+    FloatFloorDiv,
+    FloatMod,
+    FloatNeg,
+    FloatPos,
+    FloatLt,
+    FloatLe,
+    FloatGt,
+    FloatGe,
+    FloatEq,
+    FloatNe,
 
     // ========== String 매직 메서드들 ==========
     StrAdd, // concatenation
@@ -139,6 +156,7 @@ impl NativeMethod {
             Self::IntSub => "__sub__",
             Self::IntMul => "__mul__",
             Self::IntFloorDiv => "__floordiv__",
+            Self::IntTrueDiv => "__truediv__",
             Self::IntMod => "__mod__",
             Self::IntNeg => "__neg__",
             Self::IntPos => "__pos__",
@@ -148,6 +166,22 @@ impl NativeMethod {
             Self::IntGe => "__ge__",
             Self::IntEq => "__eq__",
             Self::IntNe => "__ne__",
+
+            // Float 매직 메서드
+            Self::FloatAdd => "__add__",
+            Self::FloatSub => "__sub__",
+            Self::FloatMul => "__mul__",
+            Self::FloatTrueDiv => "__truediv__",
+            Self::FloatFloorDiv => "__floordiv__",
+            Self::FloatMod => "__mod__",
+            Self::FloatNeg => "__neg__",
+            Self::FloatPos => "__pos__",
+            Self::FloatLt => "__lt__",
+            Self::FloatLe => "__le__",
+            Self::FloatGt => "__gt__",
+            Self::FloatGe => "__ge__",
+            Self::FloatEq => "__eq__",
+            Self::FloatNe => "__ne__",
 
             // String 매직 메서드
             Self::StrAdd => "__add__",
@@ -270,20 +304,12 @@ pub const TYPE_NONE: u16 = 3;
 pub const TYPE_RANGE: u16 = 4;
 pub const TYPE_LIST: u16 = 5;
 pub const TYPE_DICT: u16 = 6;
+pub const TYPE_FLOAT: u16 = 7;
 pub const TYPE_USER_START: u16 = 100;
 
-// ========== 유틸리티 함수 ==========
-
-/// String 객체 생성 헬퍼
-///
-/// 문자열을 Object로 래핑하여 Value를 생성합니다.
-pub fn make_string(s: String) -> crate::vm::bytecode::Value {
-    use crate::vm::bytecode::Value;
-    use crate::vm::value::{Object, ObjectData};
-    use std::rc::Rc;
-
-    Value::Object(Rc::new(Object::new(TYPE_STR, ObjectData::String(s))))
-}
+// ========== 유틸리티 함수 Re-exports ==========
+// 실제 구현은 vm::utils 모듈에 있음
+pub use super::utils::{make_string, make_list};
 
 /// Built-in 타입들 초기화
 ///
@@ -318,6 +344,13 @@ pub fn init_builtin_types() -> Vec<TypeDef> {
                 "__floordiv__",
                 MethodImpl::Native {
                     func: NativeMethod::IntFloorDiv,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__truediv__",
+                MethodImpl::Native {
+                    func: NativeMethod::IntTrueDiv,
                     arity: Arity::Exact(1),
                 },
             ),
@@ -708,6 +741,107 @@ pub fn init_builtin_types() -> Vec<TypeDef> {
                 MethodImpl::Native {
                     func: NativeMethod::DictNext,
                     arity: Arity::Exact(0),
+                },
+            ),
+        ]),
+        // TYPE_FLOAT (7)
+        TypeDef::new("float", TypeFlags::IMMUTABLE).with_methods(vec![
+            (
+                "__add__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatAdd,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__sub__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatSub,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__mul__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatMul,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__truediv__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatTrueDiv,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__floordiv__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatFloorDiv,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__mod__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatMod,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__neg__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatNeg,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__pos__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatPos,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__lt__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatLt,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__le__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatLe,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__gt__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatGt,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__ge__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatGe,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__eq__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatEq,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "__ne__",
+                MethodImpl::Native {
+                    func: NativeMethod::FloatNe,
+                    arity: Arity::Exact(1),
                 },
             ),
         ]),
