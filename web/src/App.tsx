@@ -34,6 +34,8 @@ function App() {
   const [editor, setEditor] = useState<monaco.editor.IStandaloneCodeEditor | null>(null)
   const [editorWidth, setEditorWidth] = useState<number>(60) // 60% default
   const [isResizing, setIsResizing] = useState(false)
+  const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number }>({ line: 1, column: 1 })
+  const [codeLength, setCodeLength] = useState<number>(0)
   
   const [wasmReady, setWasmReady] = useState(false)
   const [examples, setExamples] = useState<Example[]>([])
@@ -421,12 +423,28 @@ function App() {
       })
       setEditor(instance)
 
+      // Track cursor position
+      instance.onDidChangeCursorPosition((e) => {
+        setCursorPosition({ line: e.position.lineNumber, column: e.position.column })
+      })
+
+      // Track code length
+      const updateCodeLength = () => {
+        if (!instance) return
+        const model = instance.getModel()
+        if (model) {
+          const value = model.getValue()
+          setCodeLength(new TextEncoder().encode(value).length)
+        }
+      }
+      updateCodeLength() // Initial calculation
+
       // Add keyboard shortcut for Run (Ctrl+Enter)
       instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
         if (!wasmReady) {
           return
         }
-        
+
         const code = instance!.getValue()
         startProgram(code)
       })
@@ -439,6 +457,9 @@ function App() {
         analyzeTimeoutRef.current = setTimeout(() => {
           autoAnalyze(instance!)
         }, 500) // 500ms debounce
+
+        // Update code length on content change
+        updateCodeLength()
       })
 
       // Initial analyze
@@ -616,6 +637,18 @@ function App() {
             )}
           </div>
           <div className="flex-1 min-h-0" ref={editorRef} />
+
+          {/* Status bar */}
+          <div className="flex items-center justify-between px-3 md:px-4 py-1 bg-black/30 backdrop-blur-sm border-t border-gray-800/50 flex-shrink-0">
+            <div className="flex items-center gap-3 md:gap-4 text-xs text-gray-400">
+              <span className="font-mono">
+                Ln {cursorPosition.line}, Col {cursorPosition.column}
+              </span>
+            </div>
+            <div className="text-xs text-gray-400">
+              <span className="font-mono">{codeLength} bytes</span>
+            </div>
+          </div>
         </div>
 
         {/* Resize handle */}
