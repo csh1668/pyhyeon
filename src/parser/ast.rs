@@ -98,6 +98,9 @@ pub enum Stmt {
         methods: Vec<MethodDef>,
         attributes: Vec<(String, ExprS)>,
     },
+    Break,
+    Continue,
+    Pass,
     Expr(ExprS),
 }
 

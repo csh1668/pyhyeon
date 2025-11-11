@@ -4,3 +4,5 @@
 
 *.pyhb
 web/pkg
+
+.claude/settings.local.json

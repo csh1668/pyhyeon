@@ -16,6 +16,9 @@ pub enum Token {
     Or,
     Not,
     Class,
+    Break,
+    Continue,
+    Pass,
     // Identifiers and literals
     None,
     Bool(bool),
@@ -72,6 +75,9 @@ impl Display for Token {
             Token::Or => write!(f, "or"),
             Token::Not => write!(f, "not"),
             Token::Class => write!(f, "class"),
+            Token::Break => write!(f, "break"),
+            Token::Continue => write!(f, "continue"),
+            Token::Pass => write!(f, "pass"),
 
             // Identifiers and literals
             Token::None => write!(f, "None"),

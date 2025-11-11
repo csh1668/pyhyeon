@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(cargo test:*)",
-      "Bash(cargo run:*)"
+      "Bash(cargo run:*)",
+      "Bash(cargo check:*)"
     ],
     "deny": [],
     "ask": []

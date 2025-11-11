@@ -1,5 +1,6 @@
 use super::bytecode::{FunctionCode, Instruction as I, Module};
 use std::fmt::{self, Write};
+use crate::vm::Instruction;
 
 pub fn disassemble_module_to_string(module: &Module) -> String {
     let mut output = String::new();
@@ -81,6 +82,11 @@ fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt:
             write!(w, "{} {} (\"{}\")", ins_name, idx, s)
         }
         I::LoadConst(idx) => write!(w, "{} {}", ins_name, idx),
+        I::True => write!(w, "{}", ins_name),
+        I::False => write!(w, "{}", ins_name),
+        I::None => write!(w, "{}", ins_name),
+
+        I::Pop => write!(w, "{}", ins_name),
 
         I::LoadLocal(idx) => write!(w, "{} {}", ins_name, idx),
         I::StoreLocal(idx) => write!(w, "{} {}", ins_name, idx),
@@ -93,6 +99,23 @@ fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt:
             write!(w, "{} {} (\"{}\")", ins_name, idx, name)
         }
 
+        I::Add => write!(w, "{}", ins_name),
+        I::Sub => write!(w, "{}", ins_name),
+        I::Mul => write!(w, "{}", ins_name),
+        I::Div => write!(w, "{}", ins_name),
+        I::Mod => write!(w, "{}", ins_name),
+        I::Neg => write!(w, "{}", ins_name),
+        I::Pos => write!(w, "{}", ins_name),
+        I::TrueDiv => write!(w, "{}", ins_name),
+
+        I::Eq => write!(w, "{}", ins_name),
+        I::Ne => write!(w, "{}", ins_name),
+        I::Lt => write!(w, "{}", ins_name),
+        I::Le => write!(w, "{}", ins_name),
+        I::Gt => write!(w, "{}", ins_name),
+        I::Ge => write!(w, "{}", ins_name),
+        I::Not => write!(w, "{}", ins_name),
+        
         I::Jump(offset) => write!(w, "{} {}", ins_name, offset),
         I::JumpIfFalse(offset) => write!(w, "{} {}", ins_name, offset),
         I::JumpIfTrue(offset) => write!(w, "{} {}", ins_name, offset),
@@ -115,6 +138,7 @@ fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt:
                 ins_name, method_sym, method_name, argc
             )
         }
+        I::Return => write!(w, "{}", ins_name),
 
         I::LoadAttr(attr_sym) => {
             let attr_name = &module.symbols[*attr_sym as usize];
@@ -127,8 +151,7 @@ fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt:
 
         I::BuildList(count) => write!(w, "{} (count={})", ins_name, count),
         I::BuildDict(count) => write!(w, "{} (count={})", ins_name, count),
-        
-        // No arg
-        _ => write!(w, "{}", ins_name),
+        I::LoadIndex => write!(w, "{}", ins_name),
+        I::StoreIndex => write!(w, "{}", ins_name),
     }
 }

@@ -304,8 +304,20 @@ where
             .map(Stmt::Expr)
             .labelled("expression statement");
 
+        let break_stmt = just(Token::Break)
+            .to(Stmt::Break)
+            .labelled("break statement");
+
+        let continue_stmt = just(Token::Break)
+            .to(Stmt::Continue)
+            .labelled("continue statement");
+
+        let pass_stmt = just(Token::Pass)
+            .to(Stmt::Pass)
+            .labelled("pass statement");
+
         // A line of one or more simple statements separated by ';' with optional trailing ';'
-        let simple_stmt = choice((return_stmt.clone(), assign_stmt.clone(), expr_stmt.clone()))
+        let simple_stmt = choice((return_stmt.clone(), assign_stmt.clone(), expr_stmt.clone(), break_stmt.clone(), continue_stmt.clone(), pass_stmt.clone()))
             .map_with(|node: Stmt, e| {
                 let s: I::Span = e.span();
                 (node, s.into_range())

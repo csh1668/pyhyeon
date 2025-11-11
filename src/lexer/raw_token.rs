@@ -29,6 +29,12 @@ pub enum RawToken {
     Not,
     #[token("class")]
     Class,
+    #[token("break")]
+    Break,
+    #[token("continue")]
+    Continue,
+    #[token("pass")]
+    Pass,
 
     // Identifiers and literals
     #[token("None")]
