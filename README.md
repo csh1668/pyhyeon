@@ -23,6 +23,7 @@ Pyhyeon is a toy programming language implementing Python's core syntax. It prov
 - ✅ **Python-style Syntax**: Indentation-based blocks, functions, control flow
 - ✅ **Type Safety**: Static semantic analysis and type checking
 - ✅ **Friendly Error Messages**: Ariadne-based error reporting
+- ✅ **Interactive REPL**: Real-time code execution with history and special commands
 - ✅ **[Web Playground](https://csh1668.github.io/pyhyeon/)**: WASM-based browser execution environment
 - ✅ **Bytecode Compilation**: Compile to `.pyhb` files
 
@@ -82,13 +83,22 @@ cargo build --release
 
 ```bash
 # Run a program (compiles and executes with VM)
-cargo run --release --bin pyhyeon -- run test.pyh
+cargo run --release --bin pyhc -- run test.pyh
+
+# Start interactive REPL
+cargo run --release --bin pyhc -- repl
 
 # Compile to bytecode
-cargo run --release --bin pyhyeon -- compile test.pyh -o test.pyhb
+cargo run --release --bin pyhc -- compile test.pyh -o test.pyhb
 
 # Execute compiled bytecode
-cargo run --release --bin pyhyeon -- exec test.pyhb
+cargo run --release --bin pyhc -- exec test.pyhb
+
+# Disassemble bytecode
+cargo run --release --bin pyhc -- disasm test.pyhb
+
+# Compile and disassemble (no file output)
+cargo run --release --bin pyhc -- dism test.pyh
 ```
 
 ## 📚 Language Features

@@ -1,6 +1,8 @@
 pub mod builtins;
 pub mod lexer;
 pub mod parser;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod repl;
 pub mod runtime_io;
 pub mod semantic;
 pub mod types;
@@ -78,6 +80,16 @@ pub fn parse_source(src: &str) -> Result<Vec<parser::ast::StmtS>, Vec<Diagnostic
 
 pub fn analyze(program: &[parser::ast::StmtS]) -> Result<(), Diagnostic> {
     match semantic::analyze(program) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(Diagnostic {
+            message: e.message,
+            span: e.span,
+        }),
+    }
+}
+
+pub fn analyze_with_globals(program: &[parser::ast::StmtS], existing_globals: &[String]) -> Result<(), Diagnostic> {
+    match semantic::analyze_with_globals(program, existing_globals) {
         Ok(_) => Ok(()),
         Err(e) => Err(Diagnostic {
             message: e.message,

@@ -35,12 +35,22 @@ impl ProgramContext {
 }
 
 pub fn analyze(program: &[StmtS]) -> SemanticResult<()> {
+    analyze_with_globals(program, &[])
+}
+
+/// REPL용: 기존 전역 변수를 포함하여 분석
+pub fn analyze_with_globals(program: &[StmtS], existing_globals: &[String]) -> SemanticResult<()> {
     // 1) 이름 해석(스코프) + 간단 규칙 확인
     let mut ctx = ProgramContext::new_with_builtins();
     let mut scopes = scope::ScopeStack::new();
     // preload builtins into global scope for resolution
     for b in ctx.builtins.clone() {
         scopes.define(b);
+    }
+    
+    // preload existing globals (for REPL)
+    for g in existing_globals {
+        scopes.define(g.clone());
     }
 
     // 모듈 레벨 분석

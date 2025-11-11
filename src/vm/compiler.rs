@@ -38,6 +38,28 @@ impl Compiler {
             loop_stack: Vec::new(),
         }
     }
+    
+    /// 기존 컨텍스트를 포함하여 컴파일러 생성 (REPL 등 증분 컴파일용)
+    pub fn with_context(
+        symbols: HashMap<String, u16>,
+        symbol_names: Vec<String>,
+        existing_functions: Vec<FunctionCode>,
+    ) -> Self {
+        let mut module = Module::default();
+        
+        // 심볼 테이블 초기화
+        module.symbols = symbol_names;
+        module.globals = vec![None; module.symbols.len()];
+        
+        // 기존 함수들 복사 (resolve_function_id에서 찾을 수 있도록)
+        module.functions = existing_functions;
+        
+        Self {
+            module,
+            symbols,
+            loop_stack: Vec::new(),
+        }
+    }
 
     pub fn compile(mut self, program: &[StmtS]) -> Module {
         // Reserve function 0 for __main__ entry
@@ -575,12 +597,17 @@ impl Compiler {
         if name == "__main__" {
             return 0;
         }
+        
+        // module.functions
         for (i, f) in self.module.functions.iter().enumerate() {
-            let sym = self.module.symbols[f.name_sym as usize].as_str();
-            if sym == name {
-                return i;
+            if f.name_sym < self.module.symbols.len() as u16 {
+                let sym = &self.module.symbols[f.name_sym as usize];
+                if sym == name {
+                    return i;
+                }
             }
         }
+        
         // if not found, create empty stub
         let id = self.module.functions.len();
         let name_sym = self.intern(name);
