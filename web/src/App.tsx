@@ -20,6 +20,7 @@ import { useVmExecution } from './hooks/useVmExecution'
 interface Example {
   id: string
   name: string
+  path: string
   description: string
   category: string
 }
@@ -78,12 +79,12 @@ function App() {
   // 선택된 예제 파일 로드
   const loadExample = useCallback(async (exampleId: string) => {
     if (!editor || !exampleId) return
-    
+
     try {
       const example = examples.find(ex => ex.id === exampleId)
       if (!example) return
-      
-      const response = await fetch(`/pyhyeon/examples/${example.name}`)
+
+      const response = await fetch(`/pyhyeon/examples/${example.path}`)
       if (response.ok) {
         const code = await response.text()
         editor.setValue(code)
@@ -224,18 +225,18 @@ function App() {
       monaco.languages.setMonarchTokensProvider('pyh', {
         // 현재 pyhyeon에 구현된 키워드들
         keywords: [
-          'if', 'elif', 'else', 'while', 'for', 'in', 'def', 'return', 
-          'and', 'or', 'not', 'class'
+          'if', 'elif', 'else', 'while', 'for', 'in', 'def', 'return',
+          'and', 'or', 'not', 'class', 'break', 'continue', 'pass'
         ],
-        
+
         // 상수 키워드
         constants: ['None', 'True', 'False'],
-        
+
         // 특별한 식별자
         special: ['self'],
-        
+
         // 내장 함수들
-        builtins: ['print', 'input', 'int', 'bool', 'str', 'len', 'range', 'list', 'dict'],
+        builtins: ['print', 'input', 'int', 'bool', 'str', 'len', 'range', 'list', 'dict', 'float'],
         
         // 연산자들
         operators: [

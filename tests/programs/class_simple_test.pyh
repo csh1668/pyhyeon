@@ -1,9 +1,0 @@
-# 클래스 생성 간단 테스트
-
-class Point:
-  def __init__(self, x):
-    self.x = x
-
-p = Point(5)
-print(p.x)
-

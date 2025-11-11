@@ -1,6 +1,0 @@
-# 중첩 for문
-for i in range(3):
-  for j in range(2):
-    print(i * 10 + j)
-
-

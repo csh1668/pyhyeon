@@ -53,7 +53,7 @@ pub fn typecheck_program(program: &[StmtS], ctx: &super::ProgramContext) -> Sema
 
     // Walk module-level statements
     for stmt in program {
-        tc_stmt(stmt, &mut tenv, ctx, None)?;
+        tc_stmt(stmt, &mut tenv, ctx, None, false)?;
     }
     Ok(())
 }
@@ -63,8 +63,31 @@ fn tc_stmt(
     tenv: &mut TypeEnv,
     ctx: &super::ProgramContext,
     current_fn_return: Option<*mut Ty>,
+    in_loop: bool,
 ) -> SemanticResult<()> {
     match &stmt.0 {
+        Stmt::Break => {
+            if !in_loop {
+                return Err(SemanticError {
+                    message: "SyntaxError: 'break' outside loop".to_string(),
+                    span: stmt.1.clone(),
+                });
+            }
+            Ok(())
+        }
+        Stmt::Continue => {
+            if !in_loop {
+                return Err(SemanticError {
+                    message: "SyntaxError: 'continue' outside loop".to_string(),
+                    span: stmt.1.clone(),
+                });
+            }
+            Ok(())
+        }
+        Stmt::Pass => {
+            // Pass는 항상 허용 (no-op)
+            Ok(())
+        }
         Stmt::Class { .. } => {
             // 클래스 정의는 타입 체크 스킵 (v1에서는 간단히 처리)
             Ok(())
@@ -146,7 +169,7 @@ fn tc_stmt(
             let mut then_assigned: HashSet<String> = HashSet::new();
             with_env(&mut then_env, |e| {
                 for s in then_block {
-                    let _ = tc_stmt(s, e, ctx, current_fn_return);
+                    let _ = tc_stmt(s, e, ctx, current_fn_return, in_loop);
                 }
             });
             collect_assigned(&base, &then_env, &mut then_assigned);
@@ -159,7 +182,7 @@ fn tc_stmt(
                 let mut env_i = snapshot_env(&base);
                 with_env(&mut env_i, |e| {
                     for s in block {
-                        let _ = tc_stmt(s, e, ctx, current_fn_return);
+                        let _ = tc_stmt(s, e, ctx, current_fn_return, in_loop);
                     }
                 });
                 let mut assigned_i = HashSet::new();
@@ -173,7 +196,7 @@ fn tc_stmt(
                 let mut else_assigned: HashSet<String> = HashSet::new();
                 with_env(&mut else_env, |e| {
                     for s in block {
-                        let _ = tc_stmt(s, e, ctx, current_fn_return);
+                        let _ = tc_stmt(s, e, ctx, current_fn_return, in_loop);
                     }
                 });
                 collect_assigned(&base, &else_env, &mut else_assigned);
@@ -223,7 +246,7 @@ fn tc_stmt(
             let mut loop_env = snapshot_env(tenv);
             with_env(&mut loop_env, |e| {
                 for s in body {
-                    let _ = tc_stmt(s, e, ctx, current_fn_return);
+                    let _ = tc_stmt(s, e, ctx, current_fn_return, true);
                 }
             });
             Ok(())
@@ -242,7 +265,7 @@ fn tc_stmt(
                 // 루프 변수는 Unknown 타입으로 시작 (range는 Int를 생성)
                 e.set(var.clone(), Ty::Unknown);
                 for s in body {
-                    let _ = tc_stmt(s, e, ctx, current_fn_return);
+                    let _ = tc_stmt(s, e, ctx, current_fn_return, true);
                 }
             });
             Ok(())
@@ -260,7 +283,7 @@ fn tc_stmt(
             let mut ret: Ty = Ty::Unknown;
             let ret_ptr: *mut Ty = &mut ret;
             for s in body {
-                tc_stmt(s, tenv, ctx, Some(ret_ptr))?;
+                tc_stmt(s, tenv, ctx, Some(ret_ptr), false)?;
             }
             tenv.pop();
             let _ = ret; // currently unused for call-site checks

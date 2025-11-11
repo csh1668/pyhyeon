@@ -1,0 +1,166 @@
+# 종합 반복문 테스트: for/while, break/continue, 중첩, 함수 내부
+
+# 1. 기본 for 루프 - range 변형들
+print("=== Basic for loops ===")
+sum1 = 0
+for i in range(5):
+  sum1 = sum1 + i
+print(sum1)  # 10
+
+sum2 = 0
+for i in range(2, 7):
+  sum2 = sum2 + i
+print(sum2)  # 20
+
+sum3 = 0
+for i in range(0, 10, 2):
+  sum3 = sum3 + i
+print(sum3)  # 20
+
+# 2. while 루프 with break/continue
+print("=== While with break/continue ===")
+n = 0
+while n < 10:
+  n = n + 1
+  if n == 3:
+    continue
+  if n == 7:
+    break
+  print(n)
+# 1, 2, 4, 5, 6
+
+# 3. for 루프 with break/continue
+print("=== For with break/continue ===")
+for i in range(10):
+  if i == 3:
+    continue
+  if i == 7:
+    break
+  print(i)
+# 0, 1, 2, 4, 5, 6
+
+# 4. 중첩 루프 - 구구단 일부
+print("=== Nested loops ===")
+for i in range(2, 4):
+  for j in range(1, 4):
+    result = i * j
+    print(result)
+# 2, 4, 6, 3, 6, 9
+
+# 5. 중첩 루프 with break (내부 루프만)
+print("=== Nested with inner break ===")
+for i in range(3):
+  for j in range(5):
+    if j == 2:
+      break
+    print(j)
+# 0, 1, 0, 1, 0, 1
+
+# 6. 리스트 순회
+print("=== List iteration ===")
+nums = [10, 20, 30]
+total = 0
+for num in nums:
+  total = total + num
+print(total)  # 60
+
+# 7. 딕셔너리 순회
+print("=== Dict iteration ===")
+scores = {"alice": 90, "bob": 85}
+for name in scores:
+  score = scores[name]
+  print(score)
+# 90, 85
+
+# 8. 함수 내 루프
+print("=== Loops in function ===")
+def factorial(n):
+  result = 1
+  for i in range(1, n + 1):
+    result = result * i
+  return result
+
+print(factorial(5))  # 120
+
+def count_evens(limit):
+  count = 0
+  i = 0
+  while i < limit:
+    if i % 2 == 0:
+      count = count + 1
+    i = i + 1
+  return count
+
+print(count_evens(10))  # 5
+
+# 9. 루프 내 함수 호출
+print("=== Function calls in loop ===")
+def is_even(n):
+  return n % 2 == 0
+
+even_sum = 0
+for i in range(10):
+  if is_even(i):
+    even_sum = even_sum + i
+print(even_sum)  # 20
+
+# 10. 복잡한 중첩 - 소수 찾기
+print("=== Complex nested - primes ===")
+def is_prime(n):
+  if n < 2:
+    return False
+  i = 2
+  while i * i <= n:
+    if n % i == 0:
+      return False
+    i = i + 1
+  return True
+
+prime_count = 0
+for num in range(2, 20):
+  if is_prime(num):
+    prime_count = prime_count + 1
+print(prime_count)  # 8 (2,3,5,7,11,13,17,19)
+
+# 11. 리스트 컴프리헨션 대체 (필터링)
+print("=== List filtering pattern ===")
+numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+evens = []
+for n in numbers:
+  if n % 2 == 0:
+    evens.append(n)
+print(len(evens))  # 5
+
+# 12. 이중 break 패턴 (플래그 사용)
+print("=== Double break pattern ===")
+found = False
+for i in range(5):
+  for j in range(5):
+    if i * j == 6:
+      found = True
+      break
+  if found:
+    break
+print(found)  # True
+
+# 13. 카운터와 어큐뮬레이터 동시 사용
+print("=== Counter and accumulator ===")
+count = 0
+sum_val = 0
+for i in range(1, 11):
+  if i % 3 == 0:
+    count = count + 1
+    sum_val = sum_val + i
+print(count)    # 3
+print(sum_val)  # 18
+
+# 14. 역순 range
+print("=== Reverse range ===")
+countdown = []
+for i in range(5, 0, -1):
+  countdown.append(i)
+print(len(countdown))  # 5
+print(countdown[0])    # 5
+print(countdown[4])    # 1
+
+print("=== All tests complete ===")

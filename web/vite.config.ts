@@ -9,57 +9,99 @@ import react from '@vitejs/plugin-react-swc'
 function copyExamplesPlugin(): Plugin {
   const sourceDir = path.resolve(__dirname, '../tests/programs')
   const targetDir = path.resolve(__dirname, './public/examples')
-  
-  function copyExamples() {
-    // 타겟 디렉토리 생성
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true })
+
+  function getCategoryFromPath(folderName: string, filename: string): string {
+    // 폴더 구조 기반 카테고리 매핑
+    const categoryMap: Record<string, string> = {
+      'basics': 'Basics',
+      'loops': 'Loops',
+      'collections': 'Collections',
+      'classes': 'Classes',
+      'io': 'Input/Output',
+      'strings': 'Strings'
     }
-    
-    // .pyh 파일들 읽기
-    const files = fs.readdirSync(sourceDir)
-      .filter(f => f.endsWith('.pyh'))
-      .sort()
-    
-    // 파일 복사
-    files.forEach(file => {
-      const sourcePath = path.join(sourceDir, file)
-      const targetPath = path.join(targetDir, file)
-      fs.copyFileSync(sourcePath, targetPath)
-    })
-    
-    // 메타데이터 생성
-    const examples = files.map(file => {
-      const content = fs.readFileSync(path.join(sourceDir, file), 'utf-8')
-      const firstLine = content.split('\n')[0]
-      const description = firstLine.startsWith('#') ? firstLine.slice(1).trim() : file
-      
-      return {
-        id: file.replace('.pyh', ''),
-        name: file,
-        description,
-        category: getCategoryFromFilename(file)
-      }
-    })
-    
-    fs.writeFileSync(
-      path.join(targetDir, 'examples.json'),
-      JSON.stringify(examples, null, 2),
-      'utf-8'
-    )
-    
-    console.log(`✓ Copied ${files.length} example files to public/examples/`)
-  }
-  
-  function getCategoryFromFilename(filename: string): string {
-    if (filename.startsWith('class_') || filename.startsWith('test_class') || filename.includes('method_chaining')) return 'Class'
+
+    // 폴더명이 있으면 그걸 사용, 없으면 루트 디렉토리로 간주
+    if (folderName && folderName !== '.') {
+      return categoryMap[folderName] || folderName.charAt(0).toUpperCase() + folderName.slice(1)
+    }
+
+    // 하위 호환성: 폴더 없는 파일들을 위한 기존 로직
+    if (filename.startsWith('class_') || filename.startsWith('test_class') || filename.includes('method_chaining')) return 'Classes'
     if (filename.startsWith('input_')) return 'Input/Output'
-    if (filename.startsWith('string_')) return 'String'
+    if (filename.startsWith('string_')) return 'Strings'
     if (filename.startsWith('func_') || filename.includes('fib') || filename.includes('prime')) return 'Functions'
     if (filename.startsWith('loop') || filename.includes('heavy_loop')) return 'Loops'
     if (filename.startsWith('branch')) return 'Conditionals'
     if (filename.startsWith('arith')) return 'Arithmetic'
     return 'Examples'
+  }
+
+  function copyExamples() {
+    // 타겟 디렉토리 생성
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true })
+    }
+
+    // 재귀적으로 .pyh 파일들 찾기
+    function findPyhFiles(dir: string, baseDir: string = dir): Array<{ relativePath: string, fullPath: string }> {
+      const results: Array<{ relativePath: string, fullPath: string }> = []
+      const entries = fs.readdirSync(dir, { withFileTypes: true })
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name)
+        if (entry.isDirectory()) {
+          results.push(...findPyhFiles(fullPath, baseDir))
+        } else if (entry.isFile() && entry.name.endsWith('.pyh')) {
+          const relativePath = path.relative(baseDir, fullPath)
+          results.push({ relativePath, fullPath })
+        }
+      }
+
+      return results
+    }
+
+    const pyhFiles = findPyhFiles(sourceDir).sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+
+    // 파일 복사 (폴더 구조 유지)
+    pyhFiles.forEach(({ relativePath, fullPath }) => {
+      const targetPath = path.join(targetDir, relativePath)
+      const targetDirPath = path.dirname(targetPath)
+
+      // 중첩 폴더 생성
+      if (!fs.existsSync(targetDirPath)) {
+        fs.mkdirSync(targetDirPath, { recursive: true })
+      }
+
+      fs.copyFileSync(fullPath, targetPath)
+    })
+
+    // 메타데이터 생성
+    const examples = pyhFiles.map(({ relativePath, fullPath }) => {
+      const content = fs.readFileSync(fullPath, 'utf-8')
+      const firstLine = content.split('\n')[0]
+      const description = firstLine.startsWith('#') ? firstLine.slice(1).trim() : path.basename(relativePath)
+
+      // 폴더명을 카테고리로 사용 (basics/arith.pyh -> Basic)
+      const folderName = path.dirname(relativePath)
+      const category = getCategoryFromPath(folderName, path.basename(relativePath))
+
+      return {
+        id: relativePath.replace('.pyh', '').replace(/\\/g, '/'),
+        name: path.basename(relativePath),
+        path: relativePath.replace(/\\/g, '/'),
+        description,
+        category
+      }
+    })
+
+    fs.writeFileSync(
+      path.join(targetDir, 'examples.json'),
+      JSON.stringify(examples, null, 2),
+      'utf-8'
+    )
+
+    console.log(`✓ Copied ${pyhFiles.length} example files to public/examples/`)
   }
   
   return {

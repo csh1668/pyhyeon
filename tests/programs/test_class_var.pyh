@@ -1,9 +1,0 @@
-# 클래스를 변수에 할당
-class Empty:
-  def greet(self):
-    return "hello"
-
-c = Empty
-print("assigned")
-
-

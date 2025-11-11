@@ -308,7 +308,7 @@ where
             .to(Stmt::Break)
             .labelled("break statement");
 
-        let continue_stmt = just(Token::Break)
+        let continue_stmt = just(Token::Continue)
             .to(Stmt::Continue)
             .labelled("continue statement");
 

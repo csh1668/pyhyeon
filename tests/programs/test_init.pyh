@@ -1,9 +1,0 @@
-# __init__만 테스트
-class Point:
-  def __init__(self, x):
-    print("init called")
-
-p = Point(5)
-print("done")
-
-

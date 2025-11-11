@@ -59,6 +59,11 @@ fn analyze_stmt_module(
     ctx: &mut ProgramContext,
 ) -> SemanticResult<()> {
     match &stmt.0 {
+        Stmt::Break | Stmt::Continue | Stmt::Pass => {
+            // Break/Continue validation is done in typecheck
+            // Pass is always allowed as a no-op
+            Ok(())
+        }
         Stmt::Def { name, params, body } => {
             // 정의는 현재 스코프(모듈)에 바인딩
             scopes.define(name.clone());
@@ -306,6 +311,7 @@ fn collect_locals(body: &Vec<StmtS>, locals: &mut HashSet<String>) {
                 locals.insert(var.clone());
                 collect_locals(body, locals);
             }
+            Stmt::Break | Stmt::Continue | Stmt::Pass => {}
             Stmt::Return(_) | Stmt::Expr(_) => {}
         }
     }
@@ -319,6 +325,11 @@ fn analyze_stmt_function(
     assigned: &mut HashSet<String>,
 ) -> SemanticResult<()> {
     match &stmt.0 {
+        Stmt::Break | Stmt::Continue | Stmt::Pass => {
+            // Break/Continue validation is done in typecheck
+            // Pass is always allowed as a no-op
+            Ok(())
+        }
         Stmt::Assign { target, value } => {
             analyze_expr_function(value, scopes, ctx, locals, assigned)?;
             // target이 Variable이면 정의, Attribute나 Index이면 object만 검증
