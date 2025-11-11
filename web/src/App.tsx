@@ -365,7 +365,7 @@ function App() {
         minimap: { enabled: false },
         fontSize: mobile ? 12 : 14,
         lineHeight: mobile ? 20 : 24,
-        fontFamily: "'Monaco', 'Menlo', 'Ubuntu Mono', monospace",
+        fontFamily: "'D2Coding', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace",
         padding: { top: mobile ? 30 : 50, bottom: mobile ? 12 : 16 },
         scrollBeyondLastLine: false,
         renderLineHighlight: 'all',
@@ -420,6 +420,9 @@ function App() {
         occurrencesHighlight: 'singleFile',
         selectionHighlight: true,
         renderWhitespace: 'selection',
+
+        // 마우스 휠 및 모바일 제스처로 폰트 크기 조절
+        mouseWheelZoom: true,
       })
       setEditor(instance)
 

@@ -3,6 +3,13 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+  font-family: 'D2Coding';
+  src: url('./assets/D2Coding-Ver1.3.2-20180524-all.ttc') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
