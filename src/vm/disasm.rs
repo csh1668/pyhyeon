@@ -72,84 +72,63 @@ pub fn disassemble_function(
 }
 
 fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt::Result {
+    let ins_name = ins.to_string();
     match ins {
-        I::ConstI64(n) => write!(w, "ConstI64 {}", n),
-        I::ConstF64(f) => write!(w, "ConstF64 {}", f),
+        I::ConstI64(n) => write!(w, "{} {}", ins_name, n),
+        I::ConstF64(f) => write!(w, "{} {}", ins_name, f),
         I::ConstStr(idx) => {
             let s = &module.string_pool[*idx as usize];
-            write!(w, "ConstStr {} (\"{}\")", idx, s)
+            write!(w, "{} {} (\"{}\")", ins_name, idx, s)
         }
-        I::LoadConst(idx) => write!(w, "LoadConst {}", idx),
-        I::True => write!(w, "True"),
-        I::False => write!(w, "False"),
-        I::None => write!(w, "None"),
+        I::LoadConst(idx) => write!(w, "{} {}", ins_name, idx),
 
-        I::Pop => write!(w, "Pop"),
-
-        I::LoadLocal(idx) => write!(w, "LoadLocal {}", idx),
-        I::StoreLocal(idx) => write!(w, "StoreLocal {}", idx),
+        I::LoadLocal(idx) => write!(w, "{} {}", ins_name, idx),
+        I::StoreLocal(idx) => write!(w, "{} {}", ins_name, idx),
         I::LoadGlobal(idx) => {
             let name = &module.symbols[*idx as usize];
-            write!(w, "LoadGlobal {} (\"{}\")", idx, name)
+            write!(w, "{} {} (\"{}\")", ins_name, idx, name)
         }
         I::StoreGlobal(idx) => {
             let name = &module.symbols[*idx as usize];
-            write!(w, "StoreGlobal {} (\"{}\")", idx, name)
+            write!(w, "{} {} (\"{}\")", ins_name, idx, name)
         }
 
-        I::Add => write!(w, "Add"),
-        I::Sub => write!(w, "Sub"),
-        I::Mul => write!(w, "Mul"),
-        I::Div => write!(w, "Div"),
-        I::TrueDiv => write!(w, "TrueDiv"),
-        I::Mod => write!(w, "Mod"),
-        I::Neg => write!(w, "Neg"),
-        I::Pos => write!(w, "Pos"),
-
-        I::Eq => write!(w, "Eq"),
-        I::Ne => write!(w, "Ne"),
-        I::Lt => write!(w, "Lt"),
-        I::Le => write!(w, "Le"),
-        I::Gt => write!(w, "Gt"),
-        I::Ge => write!(w, "Ge"),
-        I::Not => write!(w, "Not"),
-
-        I::Jump(offset) => write!(w, "Jump {}", offset),
-        I::JumpIfFalse(offset) => write!(w, "JumpIfFalse {}", offset),
-        I::JumpIfTrue(offset) => write!(w, "JumpIfTrue {}", offset),
+        I::Jump(offset) => write!(w, "{} {}", ins_name, offset),
+        I::JumpIfFalse(offset) => write!(w, "{} {}", ins_name, offset),
+        I::JumpIfTrue(offset) => write!(w, "{} {}", ins_name, offset),
 
         I::Call(fid, argc) => {
             let fname = &module.symbols[module.functions[*fid as usize].name_sym as usize];
             write!(
                 w,
-                "Call {} (func #{} \"{}\", argc={})",
-                fid, fid, fname, argc
+                "{} {} (func #{} \"{}\", argc={})",
+                ins_name, fid, fid, fname, argc
             )
         }
-        I::CallBuiltin(bid, argc) => write!(w, "CallBuiltin {} (argc={})", bid, argc),
-        I::CallValue(argc) => write!(w, "CallValue (argc={})", argc),
+        I::CallBuiltin(bid, argc) => write!(w, "{} {} (argc={})", ins_name, bid, argc),
+        I::CallValue(argc) => write!(w, "{} (argc={})", ins_name, argc),
         I::CallMethod(method_sym, argc) => {
             let method_name = &module.symbols[*method_sym as usize];
             write!(
                 w,
-                "CallMethod {} (\"{}\", argc={})",
-                method_sym, method_name, argc
+                "{} {} (\"{}\", argc={})",
+                ins_name, method_sym, method_name, argc
             )
         }
-        I::Return => write!(w, "Return"),
 
         I::LoadAttr(attr_sym) => {
             let attr_name = &module.symbols[*attr_sym as usize];
-            write!(w, "LoadAttr {} (\"{}\")", attr_sym, attr_name)
+            write!(w, "{} {} (\"{}\")", ins_name, attr_sym, attr_name)
         }
         I::StoreAttr(attr_sym) => {
             let attr_name = &module.symbols[*attr_sym as usize];
-            write!(w, "StoreAttr {} (\"{}\")", attr_sym, attr_name)
+            write!(w, "{} {} (\"{}\")", ins_name, attr_sym, attr_name)
         }
 
-        I::BuildList(count) => write!(w, "BuildList (count={})", count),
-        I::BuildDict(count) => write!(w, "BuildDict (count={})", count),
-        I::LoadIndex => write!(w, "LoadIndex"),
-        I::StoreIndex => write!(w, "StoreIndex"),
+        I::BuildList(count) => write!(w, "{} (count={})", ins_name, count),
+        I::BuildDict(count) => write!(w, "{} (count={})", ins_name, count),
+        
+        // No arg
+        _ => write!(w, "{}", ins_name),
     }
 }

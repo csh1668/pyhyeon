@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use strum::Display;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Value {
@@ -51,7 +52,7 @@ pub struct ClassDef {
                                        // 나중에: base_class: Option<u16> (상속)
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Display)]
 pub enum Instruction {
     // constants
     ConstI64(i64),
