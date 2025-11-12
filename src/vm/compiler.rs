@@ -528,12 +528,31 @@ impl Compiler {
                         fun.code.push(I::CallValue(args.len() as u8));
                         return;
                     }
-                    // user function: resolve to existing function id by name
-                    let fid = self.resolve_function_id(name);
+                    // user function: Check if it's a defined function (def) vs variable
+                    // Only use Call instruction for actual function definitions
+                    let is_def_function = self.module.functions.iter().any(|f| {
+                        f.name_sym < self.module.symbols.len() as u16
+                            && self.module.symbols[f.name_sym as usize] == *name
+                            && !self.module.symbols[f.name_sym as usize].starts_with("<lambda#")
+                    });
+
+                    if is_def_function {
+                        // Direct function call
+                        let fid = self.resolve_function_id(name);
+                        for a in args {
+                            self.emit_expr(a, fun, locals);
+                        }
+                        fun.code.push(I::Call(fid as u16, args.len() as u8));
+                        return;
+                    }
+
+                    // Otherwise, it might be a lambda stored in a variable - use CallValue
+                    // This includes variables that hold lambdas
+                    self.emit_expr(func_name, fun, locals);
                     for a in args {
                         self.emit_expr(a, fun, locals);
                     }
-                    fun.code.push(I::Call(fid as u16, args.len() as u8));
+                    fun.code.push(I::CallValue(args.len() as u8));
                     return;
                 }
 
@@ -572,6 +591,63 @@ impl Compiler {
                 self.emit_expr(index, fun, locals);
                 // LoadIndex instruction
                 fun.code.push(I::LoadIndex);
+            }
+            Expr::Lambda { params, body } => {
+                // Lambda를 익명 함수로 컴파일 (Closure 지원)
+                // 1. 익명 함수 이름 생성
+                let lambda_name = format!("<lambda#{}>", self.module.functions.len());
+                let name_sym = self.intern(&lambda_name);
+
+                // 2. 자유 변수 분석 (외부 스코프에서 캡처해야 할 변수)
+                let free_vars = collect_free_vars(body, params, locals);
+
+                // 3. Lambda locals 레이아웃: [params..., captures...]
+                let mut lambda_locals = HashMap::new();
+                // 파라미터를 먼저 배치
+                for (i, p) in params.iter().enumerate() {
+                    lambda_locals.insert(p.clone(), i as u16);
+                }
+                // 캡처 변수를 파라미터 뒤에 배치
+                let capture_offset = params.len() as u16;
+                for (i, var) in free_vars.iter().enumerate() {
+                    lambda_locals.insert(var.clone(), capture_offset + i as u16);
+                }
+                let num_locals = (params.len() + free_vars.len()) as u16;
+
+                // 4. 함수 슬롯 예약
+                let fid = self.module.functions.len();
+                self.module.functions.push(FunctionCode {
+                    name_sym,
+                    arity: params.len() as u8,
+                    num_locals,
+                    code: vec![I::Return],
+                });
+
+                // 5. Lambda body 컴파일 (단일 표현식)
+                let mut lambda_fun = FunctionCode {
+                    name_sym,
+                    arity: params.len() as u8,
+                    num_locals,
+                    code: vec![],
+                };
+                self.emit_expr(body, &mut lambda_fun, Some(&lambda_locals));
+                lambda_fun.code.push(I::Return);
+
+                // 6. 컴파일된 함수 저장
+                self.module.functions[fid] = lambda_fun;
+
+                // 7. 캡처 변수를 스택에 push (부모 함수의 locals에서)
+                for var in &free_vars {
+                    if let Some(&local_idx) = locals.and_then(|l| l.get(var)) {
+                        fun.code.push(I::LoadLocal(local_idx));
+                    } else {
+                        // 이론적으로 여기 도달하면 안 됨 (자유 변수는 부모 locals에 있어야 함)
+                        panic!("Free variable {} not found in parent locals", var);
+                    }
+                }
+
+                // 8. MakeClosure instruction (캡처 개수 지정)
+                fun.code.push(I::MakeClosure(fid as u16, free_vars.len() as u8));
             }
         }
     }
@@ -677,6 +753,93 @@ fn collect_locals(params: &[String], body: &[StmtS]) -> HashMap<String, u16> {
         }
     }
     map
+}
+
+/// Lambda body에서 참조되는 모든 변수를 수집 (재귀적)
+fn collect_referenced_vars(expr: &ExprS, vars: &mut HashSet<String>) {
+    match &expr.0 {
+        Expr::Variable(name) => {
+            vars.insert(name.clone());
+        }
+        Expr::Binary { left, right, .. } => {
+            collect_referenced_vars(left, vars);
+            collect_referenced_vars(right, vars);
+        }
+        Expr::Unary { expr: inner, .. } => {
+            collect_referenced_vars(inner, vars);
+        }
+        Expr::Call { func_name, args } => {
+            collect_referenced_vars(func_name, vars);
+            for arg in args {
+                collect_referenced_vars(arg, vars);
+            }
+        }
+        Expr::Attribute { object, .. } => {
+            collect_referenced_vars(object, vars);
+        }
+        Expr::List(elements) => {
+            for elem in elements {
+                collect_referenced_vars(elem, vars);
+            }
+        }
+        Expr::Dict(pairs) => {
+            for (key, value) in pairs {
+                collect_referenced_vars(key, vars);
+                collect_referenced_vars(value, vars);
+            }
+        }
+        Expr::Index { object, index } => {
+            collect_referenced_vars(object, vars);
+            collect_referenced_vars(index, vars);
+        }
+        Expr::Lambda { params, body } => {
+            // 중첩 lambda의 body도 재귀적으로 탐색
+            // (중첩 lambda가 참조하는 변수를 현재 lambda도 캡처해야 할 수 있음)
+            // 단, 중첩 lambda의 파라미터는 제외
+            collect_referenced_vars(body, vars);
+            // 중첩 lambda의 파라미터는 자유 변수가 아니므로 제거
+            for param in params {
+                vars.remove(param);
+            }
+        }
+        Expr::Literal(_) => {
+            // 리터럴은 변수 참조 없음
+        }
+    }
+}
+
+/// Lambda의 자유 변수(free variables) 분석
+///
+/// 자유 변수 = 참조되지만 파라미터도 아니고 로컬 변수도 아닌 변수
+/// 단, 글로벌 변수는 제외 (LoadGlobal로 직접 접근 가능)
+fn collect_free_vars(
+    body: &ExprS,
+    params: &[String],
+    parent_locals: Option<&HashMap<String, u16>>,
+) -> Vec<String> {
+    let mut referenced_vars = HashSet::new();
+    collect_referenced_vars(body, &mut referenced_vars);
+
+    // 파라미터는 자유 변수가 아님
+    for param in params {
+        referenced_vars.remove(param);
+    }
+
+    // 부모 함수의 locals에 있는 변수만 캡처 대상
+    // (글로벌 변수는 LoadGlobal로 접근하므로 캡처 불필요)
+    let mut free_vars: Vec<String> = if let Some(locals) = parent_locals {
+        referenced_vars
+            .into_iter()
+            .filter(|var| locals.contains_key(var))
+            .collect()
+    } else {
+        // 부모 locals가 없으면 (모듈 레벨) 자유 변수 없음
+        vec![]
+    };
+
+    // 정렬하여 일관성 보장
+    free_vars.sort();
+    free_vars
 }
 
 fn patch_rel(ins: &mut I, rel: i32) {

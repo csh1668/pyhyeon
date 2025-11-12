@@ -1,0 +1,84 @@
+# Lambda 기능 테스트
+
+# 테스트 1: 간단한 lambda 표현식
+f = lambda x: x + 1
+print(f(5))
+
+# 테스트 2: 여러 개의 인자를 받는 lambda
+add = lambda x, y: x + y
+print(add(3, 4))
+
+# 테스트 3: 인자 없는 lambda
+get_pi = lambda: 3.14159
+print(get_pi())
+
+# 테스트 4: Lambda를 즉시 호출
+result = (lambda x: x * 2)(10)
+print(result)
+
+# 테스트 5: Lambda를 변수에 저장하고 여러 번 호출
+square = lambda n: n * n
+print(square(4))
+print(square(5))
+print(square(6))
+
+# 테스트 6: Lambda와 산술 연산
+mul = lambda a, b: a * b
+print(mul(7, 8))
+
+# 테스트 7: Lambda와 비교 연산
+is_positive = lambda x: x > 0
+print(is_positive(10))
+print(is_positive(-5))
+
+# 테스트 8: Lambda와 논리 연산
+both_positive = lambda x, y: x > 0 and y > 0
+print(both_positive(1, 2))
+print(both_positive(-1, 2))
+
+# 테스트 9: Lambda를 리스트에 저장
+funcs = [lambda x: x + 1, lambda x: x * 2, lambda x: x * x]
+print(funcs[0](5))
+print(funcs[1](5))
+print(funcs[2](5))
+
+# 테스트 10: Lambda와 문자열 연산
+greet = lambda name: "Hello, " + name
+print(greet("World"))
+
+# 테스트 11: 복잡한 표현식을 가진 lambda
+calc = lambda x, y: (x + y) * 2 - 1
+print(calc(3, 4))
+
+# 테스트 12: lambda안에 lambda
+first = lambda x: x + 1
+second = lambda x: first(x) + 1
+third = lambda x: second(x) + 1
+print(third(10))
+
+# 테스트 13: lambda로 lambda 생성
+make_add_two = lambda: (lambda y: y + 2)
+print(make_add_two()(2))
+
+# 테스트 14: lambda로 외부 변수 접근
+outside = 'hello'
+concat = lambda s: outside + s
+print(concat(", world"))
+
+# 테스트 15: lambda로 lambda 생성 + 외부 변수 접근
+make_add_x = lambda x: (lambda y: y + x)
+print(make_add_x(10)(10))
+print(make_add_x(20)(20))
+
+# 테스트 16: lambda를 함수 인자로 이용
+add = lambda x, y: x + y
+sub = lambda x, y: x - y
+def perform(func, x, y):
+  ret = func(x, y)
+  return ret
+print(perform(add, 10, 20))
+print(perform(sub, 5, 2))
+
+# 테스트 17: lambda 재귀
+# fact = lambda x: 1 if x == 0 else x * fact(x - 1)
+# print(fact(5))

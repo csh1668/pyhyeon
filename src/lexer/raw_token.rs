@@ -35,6 +35,8 @@ pub enum RawToken {
     Continue,
     #[token("pass")]
     Pass,
+    #[token("lambda")]
+    Lambda,
 
     // Identifiers and literals
     #[token("None")]

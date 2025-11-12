@@ -555,6 +555,12 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
             let _ = tc_expr(index, tenv, ctx)?;
             Ok(Ty::Unknown) // Index는 Unknown 타입으로 처리
         }
+        Expr::Lambda { params: _, body } => {
+            // Lambda는 함수 타입으로 처리 (현재는 Unknown으로 처리)
+            // body의 타입 체크만 수행
+            let _ = tc_expr(body, tenv, ctx)?;
+            Ok(Ty::Unknown) // Lambda는 Unknown 타입으로 처리
+        }
     }
 }
 

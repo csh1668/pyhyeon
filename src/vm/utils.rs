@@ -60,6 +60,9 @@ pub fn display_value(v: &Value) -> String {
             ObjectData::BuiltinInstance { class_type, .. } => {
                 format!("<{} object>", class_type.name())
             }
+            ObjectData::UserFunction { func_id, .. } => {
+                format!("<function lambda#{}>", func_id)
+            }
         },
     }
 }
@@ -89,6 +92,7 @@ pub fn type_name(v: &Value) -> &'static str {
             ObjectData::UserInstance { .. } => "instance",
             ObjectData::BuiltinClass { .. } => "type",
             ObjectData::BuiltinInstance { class_type, .. } => class_type.name(),
+            ObjectData::UserFunction { .. } => "function",
         },
     }
 }

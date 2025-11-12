@@ -153,5 +153,13 @@ fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt:
         I::BuildDict(count) => write!(w, "{} (count={})", ins_name, count),
         I::LoadIndex => write!(w, "{}", ins_name),
         I::StoreIndex => write!(w, "{}", ins_name),
+        I::MakeClosure(func_id, num_captures) => {
+            let fname = &module.symbols[module.functions[*func_id as usize].name_sym as usize];
+            write!(
+                w,
+                "{} {} (func #{} \"{}\", captures={})",
+                ins_name, func_id, func_id, fname, num_captures
+            )
+        }
     }
 }

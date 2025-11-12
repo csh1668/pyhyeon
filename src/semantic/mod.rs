@@ -250,6 +250,16 @@ fn analyze_expr_module(
             analyze_expr_module(index, scopes, ctx)?;
             Ok(())
         }
+        Expr::Lambda { params, body } => {
+            // Lambda는 새로운 스코프를 생성
+            scopes.push();
+            for p in params {
+                scopes.define(p.clone());
+            }
+            analyze_expr_module(body, scopes, ctx)?;
+            scopes.pop();
+            Ok(())
+        }
     }
 }
 
@@ -518,6 +528,22 @@ fn analyze_expr_function(
         Expr::Index { object, index } => {
             analyze_expr_function(object, scopes, ctx, locals, assigned)?;
             analyze_expr_function(index, scopes, ctx, locals, assigned)?;
+            Ok(())
+        }
+        Expr::Lambda { params, body } => {
+            // Lambda는 새로운 스코프를 생성
+            scopes.push();
+
+            // Lambda의 로컬 변수 = 파라미터만 (body는 단일 표현식이므로 할당 없음)
+            let lambda_locals: HashSet<String> = params.iter().cloned().collect();
+            let lambda_assigned: HashSet<String> = params.iter().cloned().collect();
+
+            for p in params {
+                scopes.define(p.clone());
+            }
+
+            analyze_expr_function(body, scopes, ctx, &lambda_locals, &lambda_assigned)?;
+            scopes.pop();
             Ok(())
         }
     }

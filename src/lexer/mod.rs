@@ -167,6 +167,7 @@ impl<'source> Lexer<'source> {
             RawToken::Break => Token::Break,
             RawToken::Continue => Token::Continue,
             RawToken::Pass => Token::Pass,
+            RawToken::Lambda => Token::Lambda,
 
             RawToken::Bool(b) => Token::Bool(b),
             RawToken::Int(i) => Token::Int(i),

@@ -64,6 +64,10 @@ pub enum Expr {
         object: Box<ExprS>,
         index: Box<ExprS>,
     },
+    Lambda {
+        params: Vec<String>,
+        body: Box<ExprS>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

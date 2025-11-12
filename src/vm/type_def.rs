@@ -305,6 +305,7 @@ pub const TYPE_RANGE: u16 = 4;
 pub const TYPE_LIST: u16 = 5;
 pub const TYPE_DICT: u16 = 6;
 pub const TYPE_FLOAT: u16 = 7;
+pub const TYPE_FUNCTION: u16 = 8;
 pub const TYPE_USER_START: u16 = 100;
 
 // ========== 유틸리티 함수 Re-exports ==========
@@ -845,6 +846,8 @@ pub fn init_builtin_types() -> Vec<TypeDef> {
                 },
             ),
         ]),
+        // TYPE_FUNCTION (8)
+        TypeDef::new("function", TypeFlags::CALLABLE),
     ]
 }
 

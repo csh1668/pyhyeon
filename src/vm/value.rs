@@ -104,6 +104,12 @@ pub enum ObjectData {
         class_type: BuiltinClassType,
         data: BuiltinInstanceData,
     },
+
+    /// User-defined function/lambda (closure)
+    UserFunction {
+        func_id: u16,
+        captures: Vec<crate::vm::bytecode::Value>,
+    },
 }
 
 /// Dict key wrapper (hashable types only)

@@ -263,7 +263,28 @@ where
             },
         ));
 
-        or_expr.labelled("expression")
+        // Lambda expression at top level: lambda x, y: expr
+        let or_expr_boxed = or_expr.boxed();
+
+        let lambda_expr = just(Token::Lambda)
+            .ignore_then(
+                ident
+                    .separated_by(just(Token::Comma))
+                    .allow_trailing()
+                    .collect()
+            )
+            .then_ignore(just(Token::Colon))
+            .then(expr.clone())
+            .map_with(|(params, body): (Vec<String>, ExprS), e| {
+                let s: I::Span = e.span();
+                (Expr::Lambda {
+                    params,
+                    body: Box::new(body),
+                }, s.into_range())
+            })
+            .labelled("lambda expression");
+
+        choice((lambda_expr, or_expr_boxed)).labelled("expression")
     }))
 }
 

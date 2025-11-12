@@ -206,21 +206,37 @@ impl Vm {
     // ========== 프레임 관리 ==========
 
     fn enter_func(&mut self, module: &Module, func_id: usize, argc: usize) -> VmResult<()> {
+        // 캡처 없는 함수 호출 (호환성)
+        self.enter_func_with_captures(module, func_id, argc, vec![])
+    }
+
+    fn enter_func_with_captures(
+        &mut self,
+        module: &Module,
+        func_id: usize,
+        argc: usize,
+        captures: Vec<Value>,
+    ) -> VmResult<()> {
         if self.frames.len() >= self.max_frames {
             return Err(err(VmErrorKind::StackOverflow, "frame overflow".into()));
         }
         let num_locals = module.functions[func_id].num_locals as usize;
 
-        // num_locals는 최소한 argc만큼은 있어야 함
-        let actual_locals = num_locals.max(argc);
+        // num_locals는 최소한 argc + captures만큼은 있어야 함
+        let actual_locals = num_locals.max(argc + captures.len());
 
         // ret_stack_size는 인자를 팝하기 BEFORE 저장해야 함
         let ret_stack_size = self.stack.len() - argc;
 
         let locals = {
             let mut locals = vec![Value::None; actual_locals];
+            // 파라미터를 locals[0..argc]에 배치
             for i in (0..argc).rev() {
                 locals[i] = self.pop()?;
+            }
+            // 캡처 변수를 locals[argc..]에 배치
+            for (i, capture) in captures.into_iter().enumerate() {
+                locals[argc + i] = capture;
             }
             locals
         };

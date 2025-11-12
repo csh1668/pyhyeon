@@ -132,6 +132,12 @@ pub enum Instruction {
     /// 인덱스 저장: obj[idx] = value
     /// Stack: object, index, value →
     StoreIndex,
+
+    /// Create a closure/lambda at runtime
+    /// Pops num_captures values from stack (captured variables)
+    /// Pushes a callable function object
+    /// Stack: capture1, capture2, ..., captureN → function_object
+    MakeClosure(u16 /* func_id */, u8 /* num_captures */),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,8 +218,8 @@ mod tests {
     fn test_module_type_table_initialization() {
         let module = Module::new();
 
-        // 타입 테이블이 8개 (int, bool, str, NoneType, range, list, dict, float) 초기화되어야 함
-        assert_eq!(module.types.len(), 8);
+        // 타입 테이블이 9개 (int, bool, str, NoneType, range, list, dict, float, function) 초기화되어야 함
+        assert_eq!(module.types.len(), 9);
 
         // 각 타입의 이름 확인
         assert_eq!(module.types[TYPE_INT as usize].name, "int");
@@ -224,6 +230,7 @@ mod tests {
         assert_eq!(module.types[TYPE_LIST as usize].name, "list");
         assert_eq!(module.types[TYPE_DICT as usize].name, "dict");
         assert_eq!(module.types[TYPE_FLOAT as usize].name, "float");
+        assert_eq!(module.types[TYPE_FUNCTION as usize].name, "function");
     }
 
     #[test]

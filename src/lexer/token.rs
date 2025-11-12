@@ -19,6 +19,7 @@ pub enum Token {
     Break,
     Continue,
     Pass,
+    Lambda,
     // Identifiers and literals
     None,
     Bool(bool),
@@ -78,6 +79,7 @@ impl Display for Token {
             Token::Break => write!(f, "break"),
             Token::Continue => write!(f, "continue"),
             Token::Pass => write!(f, "pass"),
+            Token::Lambda => write!(f, "lambda"),
 
             // Identifiers and literals
             Token::None => write!(f, "None"),

@@ -82,6 +82,11 @@ impl Vm {
             I::BuildDict(count) => self.handle_build_dict(*count),
             I::LoadIndex => self.handle_load_index(),
             I::StoreIndex => self.handle_store_index(),
+
+            // ===== Lambda/Closure =====
+            I::MakeClosure(func_id, num_captures) => {
+                self.handle_make_closure(*func_id, *num_captures, module)
+            }
         }
     }
 
@@ -1429,6 +1434,22 @@ impl Vm {
                         };
                         self.push(result)?;
                     }
+                    // User-defined function/lambda 호출 (Closure 지원)
+                    ObjectData::UserFunction { func_id, captures } => {
+                        // 인자들을 스택에 push
+                        for arg in args {
+                            self.push(arg)?;
+                        }
+
+                        // 캡처 변수와 함께 함수 호출
+                        self.enter_func_with_captures(
+                            module,
+                            *func_id as usize,
+                            argc,
+                            captures.clone(),
+                        )?;
+                        return Ok(ExecutionFlow::Continue);
+                    }
                     _ => {
                         return Err(err(
                             VmErrorKind::TypeError("callable"),
@@ -1787,6 +1808,38 @@ impl Vm {
             }
         }
 
+        Ok(ExecutionFlow::Continue)
+    }
+
+    // ==================== Lambda/Closure 핸들러 ====================
+
+    fn handle_make_closure(
+        &mut self,
+        func_id: u16,
+        num_captures: u8,
+        _module: &Module,
+    ) -> VmResult<ExecutionFlow> {
+        use crate::vm::type_def::TYPE_FUNCTION;
+        use crate::vm::value::{Object, ObjectData};
+        use std::rc::Rc;
+
+        // Pop captured variables from stack (if any)
+        let mut captures = Vec::with_capacity(num_captures as usize);
+        for _ in 0..num_captures {
+            captures.push(self.pop()?);
+        }
+        captures.reverse(); // 스택에서 역순으로 pop되므로 뒤집기
+
+        // Create UserFunction object
+        let func_obj = Value::Object(Rc::new(Object::new(
+            TYPE_FUNCTION,
+            ObjectData::UserFunction {
+                func_id,
+                captures,
+            },
+        )));
+
+        self.push(func_obj)?;
         Ok(ExecutionFlow::Continue)
     }
 }
