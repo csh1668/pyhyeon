@@ -5,7 +5,6 @@
 use crate::builtins::{BuiltinClassType, TYPE_RANGE, TYPE_STR};
 use crate::runtime_io::RuntimeIo;
 use crate::vm::bytecode::{ClassDef, Instruction as I, Module, Value};
-use crate::vm::type_def::TYPE_USER_START;
 use crate::vm::utils::{make_builtin_class, make_string, make_user_class, make_user_instance};
 use crate::vm::value::{BuiltinInstanceData, Object, ObjectData};
 use std::cell::RefCell;

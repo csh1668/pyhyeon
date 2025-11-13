@@ -256,15 +256,6 @@ impl Vm {
     /// Native 메서드 디스패처
     ///
     /// NativeMethod ID에 따라 적절한 Rust 함수를 실행합니다.
-    ///
-    /// # 구현된 메서드
-    ///
-    /// - **String**: upper, lower, strip, replace, startswith, endswith, find, count
-    /// - **Range**: __iter__
-    ///
-    /// # 미구현 메서드
-    ///
-    /// - split, join (리스트 타입 필요)
     pub(super) fn call_native_method_dispatch(
         &self,
         method: super::super::type_def::NativeMethod,

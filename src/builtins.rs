@@ -51,67 +51,67 @@ impl BuiltinClassType {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Builtin {
+pub struct BuiltinFunction {
     pub name: &'static str,
     pub arity: Arity,
     pub builtin_id: u8,
 }
 
-impl Builtin {
+impl BuiltinFunction {
     pub fn check_arity(&self, got: usize) -> bool {
         self.arity.check(got)
     }
 }
 
-const PRINT: Builtin = Builtin {
+const PRINT: BuiltinFunction = BuiltinFunction {
     name: "print",
     arity: Arity::Variadic, // print() can take any number of arguments
     builtin_id: BUILTIN_PRINT_ID,
 };
 
-const INPUT: Builtin = Builtin {
+const INPUT: BuiltinFunction = BuiltinFunction {
     name: "input",
     arity: Arity::Range(0, 1), // input() or input(prompt)
     builtin_id: BUILTIN_INPUT_ID,
 };
 
-const INT: Builtin = Builtin {
+const INT: BuiltinFunction = BuiltinFunction {
     name: "int",
     arity: Arity::Exact(1), // int(x)
     builtin_id: BUILTIN_INT_ID,
 };
 
-const BOOL: Builtin = Builtin {
+const BOOL: BuiltinFunction = BuiltinFunction {
     name: "bool",
     arity: Arity::Exact(1), // bool(x)
     builtin_id: BUILTIN_BOOL_ID,
 };
 
-const STR: Builtin = Builtin {
+const STR: BuiltinFunction = BuiltinFunction {
     name: "str",
     arity: Arity::Exact(1), // str(x)
     builtin_id: BUILTIN_STR_ID,
 };
 
-const LEN: Builtin = Builtin {
+const LEN: BuiltinFunction = BuiltinFunction {
     name: "len",
     arity: Arity::Exact(1), // len(x)
     builtin_id: BUILTIN_LEN_ID,
 };
 
-const RANGE: Builtin = Builtin {
+const RANGE: BuiltinFunction = BuiltinFunction {
     name: "range",
     arity: Arity::Range(1, 3), // range(stop) or range(start, stop) or range(start, stop, step)
     builtin_id: BUILTIN_RANGE_ID,
 };
 
-const FLOAT: Builtin = Builtin {
+const FLOAT: BuiltinFunction = BuiltinFunction {
     name: "float",
     arity: Arity::Exact(1), // float(x)
     builtin_id: BUILTIN_FLOAT_ID,
 };
 
-const ASSERT: Builtin = Builtin {
+const ASSERT: BuiltinFunction = BuiltinFunction {
     name: "assert",
     arity: Arity::Exact(1), // assert(condition)
     builtin_id: BUILTIN_ASSERT_ID,
@@ -130,18 +130,18 @@ const ASSERT: Builtin = Builtin {
 //     builtin_id: BUILTIN_DICT_ID,
 // };
 
-static REGISTRY: &[Builtin] = &[PRINT, INPUT, INT, BOOL, STR, LEN, RANGE, FLOAT, ASSERT];
+static REGISTRY: &[BuiltinFunction] = &[PRINT, INPUT, INT, BOOL, STR, LEN, RANGE, FLOAT, ASSERT];
 // TODO: Add LIST and DICT to registry when implemented
 // static REGISTRY: &[Builtin] = &[PRINT, INPUT, INT, BOOL, STR, LEN, RANGE, FLOAT, LIST, DICT, ASSERT];
 
-pub fn all() -> &'static [Builtin] {
+pub fn all() -> &'static [BuiltinFunction] {
     REGISTRY
 }
 
-pub fn lookup(name: &str) -> Option<&'static Builtin> {
+pub fn lookup(name: &str) -> Option<&'static BuiltinFunction> {
     REGISTRY.iter().find(|&b| b.name == name)
 }
 
-pub fn lookup_by_id(id: u8) -> Option<&'static Builtin> {
+pub fn lookup_by_id(id: u8) -> Option<&'static BuiltinFunction> {
     REGISTRY.iter().find(|&b| b.builtin_id == id)
 }
