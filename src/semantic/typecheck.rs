@@ -371,10 +371,7 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                     (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::Bool),
                     (Ty::Unknown, Ty::Unknown) => Ok(Ty::Bool),
                     _ => Err(SemanticError {
-                        message: format!(
-                            "TypeError: cannot compare {:?} and {:?}",
-                            tl, tr
-                        ),
+                        message: format!("TypeError: cannot compare {:?} and {:?}", tl, tr),
                         span: expr.1.clone(),
                     }),
                 },
@@ -394,32 +391,26 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
 
             if let Some(name) = func_name_str {
                 if let Some(bi) = crate::builtins::lookup(name) {
-                    if args.len() < bi.min_arity() || args.len() > bi.max_arity() {
-                        let msg = if bi.min_arity() == bi.max_arity() {
-                            format!(
-                                "ArityError: {} takes {} positional argument(s) but {} given",
-                                bi.name,
-                                bi.arity(),
-                                args.len()
-                            )
-                        } else {
-                            format!(
-                                "ArityError: {} takes {}-{} positional argument(s) but {} given",
-                                bi.name,
-                                bi.min_arity(),
-                                bi.max_arity(),
-                                args.len()
-                            )
-                        };
+                    // Unified arity checking using Arity enum
+                    if !bi.check_arity(args.len()) {
+                        let msg = format!(
+                            "ArityError: {}() takes {} argument(s) but {} given",
+                            bi.name,
+                            bi.arity.description(),
+                            args.len()
+                        );
                         return Err(SemanticError {
                             message: msg,
                             span: expr.1.clone(),
                         });
                     }
+
+                    // Type-specific validation (type checking, not arity)
                     match bi.name {
                         "print" => {
-                            if !args.is_empty() {
-                                let _ = tc_expr(&args[0], tenv, ctx)?;
+                            // Type-check all arguments
+                            for arg in args {
+                                let _ = tc_expr(arg, tenv, ctx)?;
                             }
                             return Ok(Ty::NoneType);
                         }
@@ -471,15 +462,6 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                         "range" => {
                             // range(stop) or range(start, stop) or range(start, stop, step)
                             // 모든 인자는 Int여야 함
-                            if args.is_empty() || args.len() > 3 {
-                                return Err(SemanticError {
-                                    message: format!(
-                                        "TypeError: range() takes 1 to 3 arguments, got {}",
-                                        args.len()
-                                    ),
-                                    span: expr.1.clone(),
-                                });
-                            }
                             for arg in args {
                                 let arg_ty = tc_expr(arg, tenv, ctx)?;
                                 if arg_ty != Ty::Int && arg_ty != Ty::Unknown {
@@ -495,7 +477,17 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                             // range는 iterator 객체를 반환 (타입 시스템에서는 Unknown으로 처리)
                             return Ok(Ty::Unknown);
                         }
-                        _ => return Ok(Ty::Unknown),
+                        "assert" => {
+                            let _ = tc_expr(&args[0], tenv, ctx)?;
+                            return Ok(Ty::NoneType);
+                        }
+                        _ => {
+                            // Generic fallback: type-check all arguments
+                            for arg in args {
+                                let _ = tc_expr(arg, tenv, ctx)?;
+                            }
+                            return Ok(Ty::Unknown);
+                        }
                     }
                 } else if let Some(&arity) = ctx.functions.get(name) {
                     // user-defined function
@@ -602,7 +594,6 @@ fn expect_bool(t: Ty, span: crate::types::Span) -> SemanticResult<Ty> {
     }
 }
 
-
 fn expect_numeric_pair(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResult<Ty> {
     match (t1, t2) {
         (Ty::Int, Ty::Int) => Ok(Ty::Int),
@@ -612,7 +603,10 @@ fn expect_numeric_pair(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResu
         (Ty::Unknown, Ty::Float) | (Ty::Float, Ty::Unknown) => Ok(Ty::Float),
         (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
         _ => Err(SemanticError {
-            message: format!("TypeError: expected numeric types, got {:?} and {:?}", t1, t2),
+            message: format!(
+                "TypeError: expected numeric types, got {:?} and {:?}",
+                t1, t2
+            ),
             span,
         }),
     }

@@ -271,46 +271,19 @@ impl Arity {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BuiltinClassType {
-    /// `range(start, stop, step)` 타입
-    Range,
-    /// `[1, 2, 3]` 타입
-    List,
-    /// `{"a": 1}` 타입
-    Dict,
-    // 미래 확장:
-    // Set,    // `{1, 2, 3}`
-    // Tuple,  // `(1, 2, 3)`
-}
-
-impl BuiltinClassType {
-    /// 타입 이름 반환
-    pub fn name(&self) -> &'static str {
-        match self {
-            Self::Range => "range",
-            Self::List => "list",
-            Self::Dict => "dict",
-        }
-    }
-}
-
 // ========== 타입 ID 상수 ==========
-// 0-99는 builtin 타입, 100+는 사용자 정의 타입
-pub const TYPE_INT: u16 = 0;
-pub const TYPE_BOOL: u16 = 1;
-pub const TYPE_STR: u16 = 2;
-pub const TYPE_NONE: u16 = 3;
-pub const TYPE_RANGE: u16 = 4;
-pub const TYPE_LIST: u16 = 5;
-pub const TYPE_DICT: u16 = 6;
-pub const TYPE_FLOAT: u16 = 7;
-pub const TYPE_FUNCTION: u16 = 8;
+// 빌트인 타입 ID는 crate::builtins에 정의되어 있음
+pub use crate::builtins::{
+    BuiltinClassType, TYPE_BOOL, TYPE_DICT, TYPE_FLOAT, TYPE_FUNCTION, TYPE_INT, TYPE_LIST,
+    TYPE_NONE, TYPE_RANGE, TYPE_STR,
+};
+
+// 사용자 정의 타입 시작 ID (100+)
 pub const TYPE_USER_START: u16 = 100;
 
 // ========== 유틸리티 함수 Re-exports ==========
 // 실제 구현은 vm::utils 모듈에 있음
-pub use super::utils::{make_string, make_list};
+pub use super::utils::{make_list, make_string};
 
 /// Built-in 타입들 초기화
 ///

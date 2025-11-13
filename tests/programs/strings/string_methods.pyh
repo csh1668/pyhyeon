@@ -1,9 +1,10 @@
 # String 메서드 테스트
 s = "Hello World"
 print(s.upper())
+assert(s.upper() == "HELLO WORLD")
 print(s.lower())
+assert(s.lower() == "hello world")
 
 s2 = "  spaces  "
 print(s2.strip())
-
-
+assert(s2.strip() == "spaces")

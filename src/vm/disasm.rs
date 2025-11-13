@@ -1,6 +1,6 @@
 use super::bytecode::{FunctionCode, Instruction as I, Module};
-use std::fmt::{self, Write};
 use crate::vm::Instruction;
+use std::fmt::{self, Write};
 
 pub fn disassemble_module_to_string(module: &Module) -> String {
     let mut output = String::new();
@@ -115,7 +115,7 @@ fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt:
         I::Gt => write!(w, "{}", ins_name),
         I::Ge => write!(w, "{}", ins_name),
         I::Not => write!(w, "{}", ins_name),
-        
+
         I::Jump(offset) => write!(w, "{} {}", ins_name, offset),
         I::JumpIfFalse(offset) => write!(w, "{} {}", ins_name, offset),
         I::JumpIfTrue(offset) => write!(w, "{} {}", ins_name, offset),

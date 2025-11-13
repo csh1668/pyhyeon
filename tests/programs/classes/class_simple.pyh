@@ -4,6 +4,4 @@ class Empty:
     return "hello"
 
 e = Empty()
-print(e.greet())
-
-
+assert(e.greet() == "hello")

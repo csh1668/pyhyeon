@@ -88,7 +88,10 @@ pub fn analyze(program: &[parser::ast::StmtS]) -> Result<(), Diagnostic> {
     }
 }
 
-pub fn analyze_with_globals(program: &[parser::ast::StmtS], existing_globals: &[String]) -> Result<(), Diagnostic> {
+pub fn analyze_with_globals(
+    program: &[parser::ast::StmtS],
+    existing_globals: &[String],
+) -> Result<(), Diagnostic> {
     match semantic::analyze_with_globals(program, existing_globals) {
         Ok(_) => Ok(()),
         Err(e) => Err(Diagnostic {
@@ -378,7 +381,10 @@ mod wasm_api {
 
                         // Get previous output and append error message with red color
                         let previous_output = session.io.drain_output();
-                        let error_msg = format!("\x1b[31mRuntime Error: {}\n{:?}\x1b[0m", err.message, err.kind);
+                        let error_msg = format!(
+                            "\x1b[31mRuntime Error: {}\n{:?}\x1b[0m",
+                            err.message, err.kind
+                        );
                         let combined_output = if previous_output.is_empty() {
                             error_msg
                         } else {
@@ -458,7 +464,10 @@ mod wasm_api {
 
                         // Get previous output and append error message with red color
                         let previous_output = session.io.drain_output();
-                        let error_msg = format!("\x1b[31mRuntime Error: {}\n{:?}\x1b[0m", err.message, err.kind);
+                        let error_msg = format!(
+                            "\x1b[31mRuntime Error: {}\n{:?}\x1b[0m",
+                            err.message, err.kind
+                        );
                         let combined_output = if previous_output.is_empty() {
                             error_msg
                         } else {

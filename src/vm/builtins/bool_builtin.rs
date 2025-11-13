@@ -1,7 +1,7 @@
 use super::super::bytecode::Value;
 use super::super::type_def::{TypeDef, TypeFlags};
 use super::super::{VmError, VmErrorKind, VmResult, err};
-use super::TYPE_BOOL;
+use crate::builtins::TYPE_BOOL;
 
 /// bool() builtin 함수
 ///
@@ -21,7 +21,13 @@ pub fn call(args: Vec<Value>) -> VmResult<Value> {
     }
 
     let v = &args[0];
-    let result = match v {
+    let result = to_bool(v);
+
+    Ok(Value::Bool(result))
+}
+
+pub fn to_bool(v: &Value) -> bool {
+    match v {
         Value::Bool(b) => *b,
         Value::Int(i) => *i != 0,
         Value::Float(f) => *f != 0.0,
@@ -29,13 +35,11 @@ pub fn call(args: Vec<Value>) -> VmResult<Value> {
             use super::super::value::ObjectData;
             match &obj.data {
                 ObjectData::String(s) => !s.is_empty(),
-                _ => true, // 다른 객체는 truthy
+                _ => true,
             }
         }
         Value::None => false,
-    };
-
-    Ok(Value::Bool(result))
+    }
 }
 
 /// bool 타입 정의 등록

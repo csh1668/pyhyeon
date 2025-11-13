@@ -1,54 +1,46 @@
 # Closure Edge Cases 테스트 (작동하는 버전)
 
 # 테스트 1: 2단 중첩 closure
-print("Test 1: 2-level nested closure")
 make_add = lambda x: lambda y: x + y
-print(make_add(10)(20))  # 30
+assert(make_add(10)(20) == 30)
 
 # 테스트 2: 여러 변수 동시 캡처
-print("Test 2: Multiple captures")
 make_func = lambda a, b: lambda c: a + b + c
-print(make_func(10, 20)(30))  # 60
+assert(make_func(10, 20)(30) == 60)
 
 # 테스트 3: Closure가 여러 closure 반환
-print("Test 3: Closure returning multiple closures")
 make_ops = lambda x: [lambda: x + 1, lambda: x * 2, lambda: x * x]
 funcs = make_ops(5)
-print(funcs[0]())  # 6
-print(funcs[1]())  # 10
-print(funcs[2]())  # 25
+assert(funcs[0]() == 6)
+assert(funcs[1]() == 10)
+assert(funcs[2]() == 25)
 
 # 테스트 4: Closure와 글로벌 변수 혼합
-print("Test 4: Mix closure and global")
 global_multiplier = 100
 make_calc = lambda x: lambda y: x + y + global_multiplier
 calc = make_calc(10)
-print(calc(20))  # 130
+assert(calc(20) == 130)
 
 # 테스트 5: 복잡한 표현식에서의 캡처
-print("Test 5: Complex expression capture")
 make_complex = lambda a, b: lambda x: (a + b) * x - a
 complex_fn = make_complex(5, 10)
-print(complex_fn(2))  # 25
+assert(complex_fn(2) == 25)
 
 # 테스트 6: Closure를 변수에 저장하고 재사용
-print("Test 6: Reuse closures")
 adder = lambda x: lambda y: x + y
 add5 = adder(5)
 add10 = adder(10)
-print(add5(3))   # 8
-print(add10(3))  # 13
-print(add5(7))   # 12
-print(add10(7))  # 17
+assert(add5(3) == 8)
+assert(add10(3) == 13)
+assert(add5(7) == 12)
+assert(add10(7) == 17)
 
 # 테스트 7: Closure와 산술 연산
-print("Test 7: Closure with arithmetic")
 make_doubler = lambda x: lambda: x * 2
 doubler = make_doubler(21)
-print(doubler())  # 42
+assert(doubler() == 42)
 
 # 테스트 8: 중첩에서 여러 변수 캡처
-print("Test 8: Multiple var capture in nesting")
 outer = lambda a, b: lambda c, d: a + b + c + d
 middle = outer(1, 2)
-print(middle(3, 4))  # 10
+assert(middle(3, 4) == 10)

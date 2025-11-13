@@ -1,11 +1,10 @@
 use super::super::bytecode::Value;
-use super::super::type_def::{
-    Arity, BuiltinClassType, MethodImpl, NativeMethod, TypeDef, TypeFlags,
-};
+use super::super::type_def::{Arity, MethodImpl, NativeMethod, TypeDef, TypeFlags};
 use super::super::utils::make_range;
 use super::super::value::{BuiltinInstanceData, Object, ObjectData};
 use super::super::{VmError, VmErrorKind, VmResult, err};
-use super::{TYPE_RANGE, type_name};
+use super::type_name;
+use crate::builtins::TYPE_RANGE;
 
 /// range() 생성자
 ///
@@ -24,6 +23,8 @@ use super::{TYPE_RANGE, type_name};
 ///     print(i)
 /// ```
 pub fn create_range(args: Vec<Value>) -> VmResult<Value> {
+    // Note: Arity is usually validated by semantic analyzer (1-3 args)
+    // However, we still check at runtime for direct calls (e.g., in tests or dynamic scenarios)
     let (start, stop, step) = match args.len() {
         1 => {
             // range(stop)
@@ -52,6 +53,7 @@ pub fn create_range(args: Vec<Value>) -> VmResult<Value> {
             (start, stop, step)
         }
         n => {
+            // Runtime arity check for direct calls (e.g., tests, dynamic code)
             return Err(err(
                 VmErrorKind::ArityError {
                     expected: 3,

@@ -3,9 +3,10 @@
 //! Value 표시, 타입 이름, 동등성 비교 등 VM에서 공통적으로 사용되는 헬퍼 함수들을 제공합니다.
 
 use super::bytecode::Value;
-use super::type_def::{BuiltinClassType, TYPE_LIST, TYPE_RANGE, TYPE_STR, TYPE_USER_START, TYPE_DICT};
+use super::type_def::TYPE_USER_START;
 use super::value::{BuiltinInstanceData, DictKey, Object, ObjectData};
 use super::{VmError, VmErrorKind, VmResult, err};
+use crate::builtins::{BuiltinClassType, TYPE_DICT, TYPE_LIST, TYPE_RANGE, TYPE_STR};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;

@@ -87,7 +87,10 @@ fn test_e2e_all_programs() {
     let mut failed = 0;
 
     for path in programs {
-        let name = path.strip_prefix("tests/programs/").unwrap_or(&path).to_string_lossy();
+        let name = path
+            .strip_prefix("tests/programs/")
+            .unwrap_or(&path)
+            .to_string_lossy();
         print!("Testing {}... ", name);
 
         match run_test_program_with_input(&path, &[]) {
@@ -308,11 +311,27 @@ macro_rules! assert_program {
 // ============================================================================
 
 assert_program!(test_basics_arithmetic, "basics/arith.pyh", expects = ["7"]);
-assert_program!(test_basics_branching, "basics/branch.pyh", expects = ["-1", "0", "1"]);
+assert_program!(
+    test_basics_branching,
+    "basics/branch.pyh",
+    expects = ["-1", "0", "1"]
+);
 assert_program!(test_basics_fibonacci, "basics/fib_iter.pyh");
-assert_program!(test_basics_recursion, "basics/func_rec.pyh", expects = ["720"]);
-assert_program!(test_basics_short_circuit, "basics/short_circuit.pyh", expects = ["False", "True"]);
-assert_program!(test_basics_float, "basics/test_float.pyh", expects = ["3.14", "42", "2.5"]);
+assert_program!(
+    test_basics_recursion,
+    "basics/func_rec.pyh",
+    expects = ["720"]
+);
+assert_program!(
+    test_basics_short_circuit,
+    "basics/short_circuit.pyh",
+    expects = ["False", "True"]
+);
+assert_program!(
+    test_basics_float,
+    "basics/test_float.pyh",
+    expects = ["3.14", "42", "2.5"]
+);
 assert_program!(test_basics_edge_cases, "basics/edge_case_comprehensive.pyh");
 
 // ============================================================================
@@ -320,70 +339,136 @@ assert_program!(test_basics_edge_cases, "basics/edge_case_comprehensive.pyh");
 // ============================================================================
 
 assert_program!(test_loops_basic, "loops/loops.pyh", expects = ["15"]);
-assert_program!(test_loops_comprehensive, "loops/loop_comprehensive.pyh", expects = [
-    "=== Basic for loops ===",
-    "10",
-    "20",
-    "=== While with break/continue ===",
-    "=== For with break/continue ===",
-    "=== Nested loops ===",
-    "=== Loops in function ===",
-    "120",
-    "=== Complex nested - primes ===",
-    "8",
-    "=== All tests complete ==="
-]);
+assert_program!(
+    test_loops_comprehensive,
+    "loops/loop_comprehensive.pyh",
+    expects = [
+        "=== Basic for loops ===",
+        "10",
+        "20",
+        "=== While with break/continue ===",
+        "=== For with break/continue ===",
+        "=== Nested loops ===",
+        "=== Loops in function ===",
+        "120",
+        "=== Complex nested - primes ===",
+        "8",
+        "=== All tests complete ==="
+    ]
+);
 
 // ============================================================================
 // Collection Tests - 리스트와 딕셔너리
 // ============================================================================
 
-assert_program!(test_collections_list_basic, "collections/list_basic.pyh", expects = ["[1, 2, 3]", "1", "3"]);
-assert_program!(test_collections_list_methods, "collections/list_methods.pyh", expects = ["[1, 2, 3, 4]", "4", "[1, 2, 3]"]);
-assert_program!(test_collections_list_iteration, "collections/list_for.pyh", expects = ["1", "2", "3", "4", "5", "Done"]);
+assert_program!(
+    test_collections_list_basic,
+    "collections/list_basic.pyh",
+    expects = ["[1, 2, 3]", "1", "3"]
+);
+assert_program!(
+    test_collections_list_methods,
+    "collections/list_methods.pyh",
+    expects = ["[1, 2, 3, 4]", "4", "[1, 2, 3]"]
+);
+assert_program!(
+    test_collections_list_iteration,
+    "collections/list_for.pyh",
+    expects = ["1", "2", "3", "4", "5", "Done"]
+);
 assert_program!(test_collections_dict_basic, "collections/dict_basic.pyh");
-assert_program!(test_collections_dict_methods, "collections/dict_methods.pyh");
-assert_program!(test_collections_dict_iteration, "collections/dict_for.pyh", expects = ["Done"]);
-assert_program!(test_collections_complex, "collections/collections_complex.pyh", expects = ["[[1, 2], [3, 4]]", "Alice", "Bob"]);
-assert_program!(test_collections_list_comprehension_alt, "collections/list_comprehension_alt.pyh", expects = ["[0, 2, 4]", "[0, 1, 4, 9, 16]"]);
+assert_program!(
+    test_collections_dict_methods,
+    "collections/dict_methods.pyh"
+);
+assert_program!(
+    test_collections_dict_iteration,
+    "collections/dict_for.pyh",
+    expects = ["Done"]
+);
+assert_program!(
+    test_collections_complex,
+    "collections/collections_complex.pyh",
+    expects = ["[[1, 2], [3, 4]]", "Alice", "Bob"]
+);
+assert_program!(
+    test_collections_list_comprehension_alt,
+    "collections/list_comprehension_alt.pyh",
+    expects = ["[0, 2, 4]", "[0, 1, 4, 9, 16]"]
+);
 
 // ============================================================================
 // Class Tests - 클래스, 객체, 메서드
 // ============================================================================
 
-assert_program!(test_classes_basic, "classes/class_basic.pyh", expects = ["3", "4"]);
+assert_program!(
+    test_classes_basic,
+    "classes/class_basic.pyh",
+    expects = ["3", "4"]
+);
 assert_program!(test_classes_creation, "classes/class_create.pyh");
 assert_program!(test_classes_simple, "classes/class_simple.pyh");
-assert_program!(test_classes_method_chaining, "classes/method_chaining.pyh", expects = ["Hello World"]);
+assert_program!(
+    test_classes_method_chaining,
+    "classes/method_chaining.pyh",
+    expects = ["Hello World"]
+);
 
 // ============================================================================
 // I/O Tests - 입출력 (input/output)
 // ============================================================================
 
-assert_program!(test_io_input_with_prompt, "io/input_with_prompt.pyh",
+assert_program!(
+    test_io_input_with_prompt,
+    "io/input_with_prompt.pyh",
     inputs = ["철수"],
-    expects = ["이름을 입력하세요: ", "안녕하세요, 철수님!"]);
+    expects = ["이름을 입력하세요: ", "안녕하세요, 철수님!"]
+);
 
-assert_program!(test_io_input_without_prompt, "io/input_without_prompt.pyh",
+assert_program!(
+    test_io_input_without_prompt,
+    "io/input_without_prompt.pyh",
     inputs = ["25"],
-    expects = ["나이: 25"]);
+    expects = ["나이: 25"]
+);
 
-assert_program!(test_io_input_multiple, "io/input_multiple.pyh",
+assert_program!(
+    test_io_input_multiple,
+    "io/input_multiple.pyh",
     inputs = ["Alice", "30"],
-    expects = ["Name: ", "Age: ", "Alice is 30 years old"]);
+    expects = ["Name: ", "Age: ", "Alice is 30 years old"]
+);
 
-assert_program!(test_io_input_int_conversion, "io/input_int_conversion.pyh",
+assert_program!(
+    test_io_input_int_conversion,
+    "io/input_int_conversion.pyh",
     inputs = ["10", "20"],
-    expects = ["Enter a number: ", "Enter another number: ", "Sum: 30"]);
+    expects = ["Enter a number: ", "Enter another number: ", "Sum: 30"]
+);
 
-assert_program!(test_io_input_in_loop, "io/input_in_loop.pyh",
+assert_program!(
+    test_io_input_in_loop,
+    "io/input_in_loop.pyh",
     inputs = ["Alice", "Bob", "Charlie"],
-    expects = ["Hello, Alice", "Hello, Bob", "Hello, Charlie"]);
+    expects = ["Hello, Alice", "Hello, Bob", "Hello, Charlie"]
+);
 
 // ============================================================================
 // String Tests - 문자열 조작
 // ============================================================================
 
-assert_program!(test_strings_basics, "strings/string_basics.pyh", expects = ["hello", "world", "hello world"]);
-assert_program!(test_strings_advanced, "strings/string_advanced.pyh", expects = ["42", "5", "hello world"]);
-assert_program!(test_strings_methods, "strings/string_methods.pyh", expects = ["HELLO WORLD", "hello world", "spaces"]);
+assert_program!(
+    test_strings_basics,
+    "strings/string_basics.pyh",
+    expects = ["hello", "world", "hello world"]
+);
+assert_program!(
+    test_strings_advanced,
+    "strings/string_advanced.pyh",
+    expects = ["42", "5", "hello world"]
+);
+assert_program!(
+    test_strings_methods,
+    "strings/string_methods.pyh",
+    expects = ["HELLO WORLD", "hello world", "spaces"]
+);

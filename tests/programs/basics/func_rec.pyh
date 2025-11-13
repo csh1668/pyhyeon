@@ -4,5 +4,6 @@ def fact(n):
   else:
     return n * fact(n - 1)
 
-print(fact(6))
-
+result = fact(6)
+print(result)
+assert(result == 720)

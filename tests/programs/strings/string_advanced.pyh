@@ -4,37 +4,36 @@
 x = 42
 s = str(x)
 print(s)
+assert(s == "42")
 
 # len() builtin
 text = "hello"
 length = len(text)
 print(length)
+assert(length == 5)
 
 # len() with empty string
 empty = ""
-print(len(empty))
+assert(len(empty) == 0)
 
 # String concatenation and length
 s1 = "hello"
 s2 = " world"
 combined = s1 + s2
 print(combined)
-print(len(combined))
+assert(combined == "hello world")
+assert(len(combined) == 11)
 
 # String repetition
 repeated = "abc" * 2
-print(repeated)
-print(len(repeated))
+assert(repeated == "abcabc")
+assert(len(repeated) == 6)
 
 # Convert bool to string
 b = True
 bs = str(b)
-print(bs)
+assert(bs == "True")
 
 # String comparison
-if "abc" < "def":
-  print("abc is less than def")
-
-if "hello" == "hello":
-  print("strings are equal")
-
+assert(("abc" < "def") == True)
+assert(("hello" == "hello") == True)

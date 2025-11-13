@@ -47,7 +47,7 @@ pub fn analyze_with_globals(program: &[StmtS], existing_globals: &[String]) -> S
     for b in ctx.builtins.clone() {
         scopes.define(b);
     }
-    
+
     // preload existing globals (for REPL)
     for g in existing_globals {
         scopes.define(g.clone());

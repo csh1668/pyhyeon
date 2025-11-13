@@ -4,29 +4,27 @@
 s1 = "hello"
 s2 = 'world'
 print(s1)
+assert(s1 == "hello")
 print(s2)
+assert(s2 == "world")
 
 # String concatenation
 s3 = s1 + " " + s2
 print(s3)
+assert(s3 == "hello world")
 
 # String comparison
-if s1 == "hello":
-  print("equal")
-
-if s1 != s2:
-  print("not equal")
+assert((s1 == "hello") == True)
+assert((s1 != s2) == True)
 
 # String repetition
 s4 = "ab" * 3
-print(s4)
+assert(s4 == "ababab")
 
 # Empty string
 empty = ""
-if empty == "":
-  print("empty string works")
+assert((empty == "") == True)
 
 # String with escapes
 escaped = "line1\nline2\ttab"
-print(escaped)
-
+assert(escaped == "line1\nline2\ttab")

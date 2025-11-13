@@ -1,8 +1,9 @@
 use super::super::bytecode::{Module, Value};
-use super::super::type_def::{Arity, MethodImpl, TYPE_BOOL, TYPE_FLOAT, TYPE_INT, TYPE_NONE, TYPE_STR};
+use super::super::type_def::{Arity, MethodImpl};
 use super::super::utils::expect_string;
 use super::super::value::ObjectData;
 use super::{Vm, VmErrorKind, VmResult, err};
+use crate::builtins::{TYPE_BOOL, TYPE_FLOAT, TYPE_INT, TYPE_NONE, TYPE_STR};
 use crate::runtime_io::RuntimeIo;
 use crate::vm::builtins::float;
 

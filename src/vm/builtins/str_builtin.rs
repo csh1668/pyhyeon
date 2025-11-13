@@ -3,7 +3,8 @@ use super::super::type_def::{Arity, MethodImpl, NativeMethod, TypeDef, TypeFlags
 use super::super::utils::{expect_list, expect_string, make_list, make_string};
 use super::super::value::ObjectData;
 use super::super::{VmError, VmErrorKind, VmResult, err};
-use super::{TYPE_STR, display_value};
+use super::display_value;
+use crate::builtins::TYPE_STR;
 
 /// str() builtin 함수
 pub fn call(args: Vec<Value>) -> VmResult<Value> {
@@ -67,34 +68,49 @@ pub fn str_strip(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
 }
 
 pub fn str_split(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
-    if args.len() > 1 { return Err(err(
-        VmErrorKind::ArityError {
-            expected: 1,
-            got: args.len(),
-        },
-        format!("str.split() takes 0 or 1 argument, but {} given", args.len()),
-    )); }
+    if args.len() > 1 {
+        return Err(err(
+            VmErrorKind::ArityError {
+                expected: 1,
+                got: args.len(),
+            },
+            format!(
+                "str.split() takes 0 or 1 argument, but {} given",
+                args.len()
+            ),
+        ));
+    }
     let sep = match args.get(0) {
         None => " ",
         Some(value) if expect_string(value).is_ok() => expect_string(value)?,
-        _ => return Err(err(
-            VmErrorKind::TypeError("str.split"),
-            format!("str.split() takes 0 or 1 argument, but {} given", args.len()),
-        ))
+        _ => {
+            return Err(err(
+                VmErrorKind::TypeError("str.split"),
+                format!(
+                    "str.split() takes 0 or 1 argument, but {} given",
+                    args.len()
+                ),
+            ));
+        }
     };
     let s = expect_string(receiver)?;
-    let result = s.split(sep).map(|s| make_string(s.to_string())).collect::<Vec<Value>>();
+    let result = s
+        .split(sep)
+        .map(|s| make_string(s.to_string()))
+        .collect::<Vec<Value>>();
     Ok(make_list(result))
 }
 
 pub fn str_join(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {
-    if args.len() != 1 { return Err(err(
-        VmErrorKind::ArityError {
-            expected: 1,
-            got: args.len(),
-        },
-        format!("str.join() takes 1 argument but {} given", args.len()),
-    )); }
+    if args.len() != 1 {
+        return Err(err(
+            VmErrorKind::ArityError {
+                expected: 1,
+                got: args.len(),
+            },
+            format!("str.join() takes 1 argument but {} given", args.len()),
+        ));
+    }
     let s = expect_string(receiver)?;
     let list = expect_list(&args[0])?;
     let strings: Vec<String> = list

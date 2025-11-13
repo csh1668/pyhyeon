@@ -1,13 +1,14 @@
 # Dict 기본 기능 테스트
 d = {"a": 1, "b": 2}
-print(d)
+assert(d["a"] == 1)
+assert(d["b"] == 2)
 
 # 인덱싱
 v = d["a"]
-print(v)
+assert(v == 1)
 
 # 새 키 추가
 d["c"] = 3
-print(d)
-
-
+assert(d["a"] == 1)
+assert(d["b"] == 2)
+assert(d["c"] == 3)

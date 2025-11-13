@@ -2,9 +2,9 @@ use pyhyeon as lib;
 use std::env;
 
 #[cfg(not(target_arch = "wasm32"))]
-use rustyline::error::ReadlineError;
-#[cfg(not(target_arch = "wasm32"))]
 use rustyline::DefaultEditor;
+#[cfg(not(target_arch = "wasm32"))]
+use rustyline::error::ReadlineError;
 
 fn main() {
     // Subcommands: repl/run/compile/exec/disasm/dism
@@ -40,7 +40,7 @@ fn main() {
         }
         i += 1;
     }
-    
+
     match subcmd.as_str() {
         "repl" => {
             #[cfg(not(target_arch = "wasm32"))]
@@ -58,7 +58,7 @@ fn main() {
         }
         _ => {}
     }
-    
+
     // For file-based commands, read the source file
     let path = input_path.as_str();
     let src = std::fs::read_to_string(path).expect("Failed to read source file");
@@ -155,8 +155,7 @@ fn run_repl() -> Result<(), String> {
     println!("Type :help for help, :quit to exit\n");
 
     // rustyline 에디터 초기화
-    let mut rl = DefaultEditor::new()
-        .map_err(|e| format!("Failed to create editor: {}", e))?;
+    let mut rl = DefaultEditor::new().map_err(|e| format!("Failed to create editor: {}", e))?;
 
     // 히스토리 파일 경로
     let history_path = dirs::home_dir()
@@ -196,10 +195,10 @@ fn run_repl() -> Result<(), String> {
                 // 멀티라인 모드에서 빈 라인 입력 시 실행
                 if in_block && line.trim().is_empty() {
                     in_block = false;
-                    
+
                     // 히스토리에 전체 블록 추가
                     let _ = rl.add_history_entry(&buffer);
-                    
+
                     // 실행
                     match repl_state.eval_line(&buffer) {
                         Ok(Some(value)) => {
@@ -212,7 +211,7 @@ fn run_repl() -> Result<(), String> {
                             eprintln!("{}", e);
                         }
                     }
-                    
+
                     buffer.clear();
                     continue;
                 }
@@ -289,4 +288,3 @@ fn run_repl() -> Result<(), String> {
 fn run_repl() -> Result<(), String> {
     Err("REPL is not available in WASM builds".to_string())
 }
-

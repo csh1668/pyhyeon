@@ -2,9 +2,10 @@
 //
 // 이 모듈은 바이트코드를 실행하는 VM을 구현합니다.
 
+use crate::builtins::{BuiltinClassType, TYPE_RANGE, TYPE_STR};
 use crate::runtime_io::RuntimeIo;
 use crate::vm::bytecode::{ClassDef, Instruction as I, Module, Value};
-use crate::vm::type_def::{BuiltinClassType, TYPE_RANGE, TYPE_STR, TYPE_USER_START};
+use crate::vm::type_def::TYPE_USER_START;
 use crate::vm::utils::{make_builtin_class, make_string, make_user_class, make_user_instance};
 use crate::vm::value::{BuiltinInstanceData, Object, ObjectData};
 use std::cell::RefCell;
@@ -27,6 +28,7 @@ pub enum VmErrorKind {
     UndefinedGlobal(u16),
     StackUnderflow,
     StackOverflow,
+    AssertionError,
 }
 
 #[derive(Debug)]
@@ -298,5 +300,4 @@ impl Vm {
             jump_rel(&mut f.ip, off);
         }
     }
-
 }

@@ -3,16 +3,17 @@ class Point:
   def __init__(self, x, y):
     self.x = x
     self.y = y
-  
+
   def get_x(self):
     return self.x
-  
+
   def get_y(self):
     return self.y
 
 p = Point(3, 4)
 print(p.get_x())
+assert(p.get_x() == 3)
 print(p.get_y())
-print(p.x)
-print(p.y)
-
+assert(p.get_y() == 4)
+assert(p.x == 3)
+assert(p.y == 4)

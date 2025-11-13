@@ -4,7 +4,9 @@
 numbers = []
 for i in range(5):
   numbers.append(i)
-print(numbers)
+assert(len(numbers) == 5)
+assert(numbers[0] == 0)
+assert(numbers[4] == 4)
 
 # 리스트 필터링 (짝수만)
 even = []
@@ -12,11 +14,19 @@ for n in numbers:
   if n % 2 == 0:
     even.append(n)
 print(even)
+assert(len(even) == 3)
+assert(even[0] == 0)
+assert(even[1] == 2)
+assert(even[2] == 4)
 
 # 리스트 매핑 (제곱)
 squared = []
 for n in numbers:
   squared.append(n * n)
 print(squared)
-
-
+assert(len(squared) == 5)
+assert(squared[0] == 0)
+assert(squared[1] == 1)
+assert(squared[2] == 4)
+assert(squared[3] == 9)
+assert(squared[4] == 16)

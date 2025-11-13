@@ -2,10 +2,10 @@
 //!
 //! 대화형 실행 환경을 제공합니다.
 
+use crate::vm::Vm;
 use crate::vm::bytecode::{Instruction as I, Module, Value};
 use crate::vm::utils::display_value;
-use crate::vm::Vm;
-use crate::{parse_source, analyze_with_globals};
+use crate::{analyze_with_globals, parse_source};
 use std::collections::HashMap;
 
 /// REPL 세션 상태
@@ -68,7 +68,7 @@ impl ReplState {
 
         // VM 상태 초기화
         self.vm = Vm::new();
-        
+
         // 함수 실행
         match self.vm.run(&mut self.module) {
             Ok(ret) => Ok(ret),
@@ -77,17 +77,20 @@ impl ReplState {
     }
 
     /// REPL용 컴파일: 기존 심볼과 함수 정보를 포함하여 컴파일
-    fn compile_with_context(&self, program: &[crate::parser::ast::StmtS]) -> Result<Module, String> {
+    fn compile_with_context(
+        &self,
+        program: &[crate::parser::ast::StmtS],
+    ) -> Result<Module, String> {
         // 기존 컨텍스트를 포함한 컴파일러 생성
         let compiler = crate::vm::Compiler::with_context(
             self.symbols.clone(),
             self.module.symbols.clone(),
             self.module.functions.clone(),
         );
-        
+
         Ok(compiler.compile(program))
     }
-    
+
     /// 새 모듈을 기존 상태에 병합
     ///
     /// 중요: 모든 인덱스(심볼, 함수, 문자열 등)를 재매핑해야 합니다.
@@ -96,7 +99,7 @@ impl ReplState {
         let mut symbol_map: HashMap<u16, u16> = HashMap::new();
         for (new_idx, new_symbol) in new_module.symbols.iter().enumerate() {
             let new_idx = new_idx as u16;
-            
+
             if let Some(&existing_idx) = self.symbols.get(new_symbol) {
                 // 이미 존재하는 심볼 → 기존 인덱스 매핑
                 symbol_map.insert(new_idx, existing_idx);
@@ -114,7 +117,7 @@ impl ReplState {
         let mut string_map: HashMap<u32, u32> = HashMap::new();
         for (new_idx, new_str) in new_module.string_pool.iter().enumerate() {
             let new_idx = new_idx as u32;
-            
+
             if let Some(existing_idx) = self.module.string_pool.iter().position(|s| s == new_str) {
                 string_map.insert(new_idx, existing_idx as u32);
             } else {
@@ -126,25 +129,26 @@ impl ReplState {
 
         // 3. 함수 병합 (인덱스 재매핑)
         let mut func_map: HashMap<u16, u16> = HashMap::new();
-        
+
         for (new_idx, new_func) in new_module.functions.iter().enumerate() {
             let new_idx = new_idx as u16;
-            
+
             // 함수 코드 내 인덱스 재매핑
             let mut remapped_func = new_func.clone();
-            remapped_func.name_sym = *symbol_map.get(&new_func.name_sym)
+            remapped_func.name_sym = *symbol_map
+                .get(&new_func.name_sym)
                 .ok_or_else(|| format!("Symbol mapping error for function name"))?;
-            
+
             // __main__ 함수는 특별 처리 (항상 함수 0번에 위치)
             let func_name = &self.module.symbols[remapped_func.name_sym as usize];
             if func_name == "__main__" && new_idx == 0 {
                 // 새로운 __main__을 함수 0번에 교체
                 func_map.insert(0, 0);
-                
+
                 // 바이트코드 명령어 재매핑 (아직 func_map이 완전하지 않으므로 나중에 처리)
                 let temp_code = new_func.code.clone();
                 remapped_func.code = temp_code;
-                
+
                 // 함수 0이 없으면 추가, 있으면 교체
                 if self.module.functions.is_empty() {
                     self.module.functions.push(remapped_func);
@@ -155,44 +159,48 @@ impl ReplState {
                 // 일반 함수는 끝에 추가
                 let old_idx = self.module.functions.len() as u16;
                 func_map.insert(new_idx, old_idx);
-                
+
                 // 바이트코드 명령어는 나중에 일괄 재매핑
                 remapped_func.code = new_func.code.clone();
                 self.module.functions.push(remapped_func);
             }
         }
-        
+
         // 모든 함수의 바이트코드 명령어 재매핑
         for (new_idx, _) in new_module.functions.iter().enumerate() {
             let new_idx = new_idx as u16;
             let old_idx = *func_map.get(&new_idx).unwrap();
             let old_idx_usize = old_idx as usize;
-            
+
             if old_idx_usize < self.module.functions.len() {
                 let original_code = new_module.functions[new_idx as usize].code.clone();
-                self.module.functions[old_idx_usize].code = original_code.iter().map(|ins| {
-                    self.remap_instruction(ins, &symbol_map, &string_map, &func_map)
-                }).collect();
+                self.module.functions[old_idx_usize].code = original_code
+                    .iter()
+                    .map(|ins| self.remap_instruction(ins, &symbol_map, &string_map, &func_map))
+                    .collect();
             }
         }
 
         // 4. 클래스 병합
         let mut class_map: HashMap<u16, u16> = HashMap::new();
         let base_class_idx = self.module.classes.len() as u16;
-        
+
         for (new_idx, new_class) in new_module.classes.iter().enumerate() {
             let new_idx = new_idx as u16;
             let old_idx = base_class_idx + new_idx;
             class_map.insert(new_idx, old_idx);
-            
+
             // 클래스의 메서드 테이블 재매핑
             let mut remapped_class = new_class.clone();
-            remapped_class.methods = new_class.methods.iter().map(|(name, &func_id)| {
-                let remapped_func_id = *func_map.get(&func_id)
-                    .unwrap_or(&func_id);
-                (name.clone(), remapped_func_id)
-            }).collect();
-            
+            remapped_class.methods = new_class
+                .methods
+                .iter()
+                .map(|(name, &func_id)| {
+                    let remapped_func_id = *func_map.get(&func_id).unwrap_or(&func_id);
+                    (name.clone(), remapped_func_id)
+                })
+                .collect();
+
             self.module.classes.push(remapped_class);
         }
 
@@ -239,7 +247,7 @@ impl ReplState {
     pub fn list_symbols(&self) {
         let mut symbols: Vec<_> = self.symbols.iter().collect();
         symbols.sort_by_key(|&(_, &idx)| idx);
-        
+
         if symbols.is_empty() {
             println!("No symbols defined.");
         } else {
@@ -255,7 +263,7 @@ impl ReplState {
             println!("No functions defined.");
             return;
         }
-        
+
         // __main__을 제외한 함수들
         for func in self.module.functions.iter().skip(1) {
             let name = &self.module.symbols[func.name_sym as usize];
@@ -338,7 +346,8 @@ pub fn handle_command(cmd: &str, state: &mut ReplState) -> Result<bool, String> 
 
 /// 도움말 출력
 fn print_help() {
-    println!(r#"Pyhyeon REPL Commands:
+    println!(
+        r#"Pyhyeon REPL Commands:
   :quit, :q          Exit the REPL
   :help, :h          Show this help
   :clear, :c         Clear all definitions
@@ -350,7 +359,8 @@ Tips:
   - Lines ending with ':' continue on the next line
   - Use Ctrl+C to interrupt input
   - Use arrow keys to navigate history
-"#);
+"#
+    );
 }
 
 /// 입력이 계속되어야 하는지 확인
@@ -363,7 +373,7 @@ pub fn is_in_block(buffer: &str) -> bool {
     if buffer.is_empty() {
         return false;
     }
-    
+
     // 마지막 비어있지 않은 라인 찾기
     let lines: Vec<&str> = buffer.lines().collect();
     for line in lines.iter().rev() {
@@ -381,26 +391,26 @@ pub fn calculate_indent(buffer: &str) -> String {
     if buffer.is_empty() {
         return String::new();
     }
-    
+
     let lines: Vec<&str> = buffer.lines().collect();
     if lines.is_empty() {
         return String::new();
     }
-    
+
     let last_line = lines.last().unwrap();
-    
+
     // 마지막 라인이 ':'로 끝나면 들여쓰기 증가
     if last_line.trim_end().ends_with(':') {
         let current_indent = last_line.len() - last_line.trim_start().len();
         return " ".repeat(current_indent + 2); // 2칸 추가
     }
-    
+
     // 현재 들여쓰기 유지
     let current_indent = last_line.len() - last_line.trim_start().len();
     if current_indent > 0 {
         return " ".repeat(current_indent);
     }
-    
+
     String::new()
 }
 
@@ -424,7 +434,7 @@ mod tests {
             eprintln!("Error in first eval: {}", e);
         }
         assert!(result.is_ok());
-        
+
         // 변수 재사용
         let result = state.eval_line("y = x + 5\n");
         if let Err(e) = &result {
@@ -436,7 +446,7 @@ mod tests {
     #[test]
     fn test_function_definition_and_call() {
         let mut state = ReplState::new();
-        
+
         // 함수 정의
         let code = "def add(a, b):\n  return a + b\n";
         let result = state.eval_line(code);
@@ -444,7 +454,7 @@ mod tests {
             eprintln!("Error in function definition: {}", e);
         }
         assert!(result.is_ok());
-        
+
         // 함수 호출
         let result = state.eval_line("result = add(10, 20)\n");
         if let Err(e) = &result {
@@ -465,11 +475,11 @@ mod tests {
     #[test]
     fn test_error_recovery() {
         let mut state = ReplState::new();
-        
+
         // 구문 에러
         let result = state.eval_line("x = = 10\n");
         assert!(result.is_err());
-        
+
         // 에러 후에도 상태가 유지되어야 함
         let result = state.eval_line("x = 10\n");
         assert!(result.is_ok());
@@ -478,19 +488,18 @@ mod tests {
     #[test]
     fn test_module_merge() {
         let mut state = ReplState::new();
-        
+
         // 첫 번째 변수
         let _ = state.eval_line("a = 1\n");
         assert!(state.symbols.contains_key("a"));
-        
+
         // 두 번째 변수
         let _ = state.eval_line("b = 2\n");
         assert!(state.symbols.contains_key("a"));
         assert!(state.symbols.contains_key("b"));
-        
+
         // 기존 변수 재할당
         let _ = state.eval_line("a = 100\n");
         assert!(state.symbols.contains_key("a"));
     }
 }
-

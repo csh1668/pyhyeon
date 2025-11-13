@@ -271,16 +271,19 @@ where
                 ident
                     .separated_by(just(Token::Comma))
                     .allow_trailing()
-                    .collect()
+                    .collect(),
             )
             .then_ignore(just(Token::Colon))
             .then(expr.clone())
             .map_with(|(params, body): (Vec<String>, ExprS), e| {
                 let s: I::Span = e.span();
-                (Expr::Lambda {
-                    params,
-                    body: Box::new(body),
-                }, s.into_range())
+                (
+                    Expr::Lambda {
+                        params,
+                        body: Box::new(body),
+                    },
+                    s.into_range(),
+                )
             })
             .labelled("lambda expression");
 
@@ -333,16 +336,21 @@ where
             .to(Stmt::Continue)
             .labelled("continue statement");
 
-        let pass_stmt = just(Token::Pass)
-            .to(Stmt::Pass)
-            .labelled("pass statement");
+        let pass_stmt = just(Token::Pass).to(Stmt::Pass).labelled("pass statement");
 
         // A line of one or more simple statements separated by ';' with optional trailing ';'
-        let simple_stmt = choice((return_stmt.clone(), assign_stmt.clone(), expr_stmt.clone(), break_stmt.clone(), continue_stmt.clone(), pass_stmt.clone()))
-            .map_with(|node: Stmt, e| {
-                let s: I::Span = e.span();
-                (node, s.into_range())
-            });
+        let simple_stmt = choice((
+            return_stmt.clone(),
+            assign_stmt.clone(),
+            expr_stmt.clone(),
+            break_stmt.clone(),
+            continue_stmt.clone(),
+            pass_stmt.clone(),
+        ))
+        .map_with(|node: Stmt, e| {
+            let s: I::Span = e.span();
+            (node, s.into_range())
+        });
 
         let simple_stmts_line = simple_stmt
             .separated_by(just(Token::Semicolon))

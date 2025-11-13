@@ -76,8 +76,8 @@ pub enum Instruction {
     Add,
     Sub,
     Mul,
-    Div,      // Floor division (//)
-    TrueDiv,  // True division (/)
+    Div,     // Floor division (//)
+    TrueDiv, // True division (/)
     Mod,
     Neg,
     Pos,
@@ -199,15 +199,6 @@ impl Module {
         }
     }
 }
-
-pub const BUILTIN_PRINT_ID: u8 = 0;
-pub const BUILTIN_INPUT_ID: u8 = 1;
-pub const BUILTIN_INT_ID: u8 = 2;
-pub const BUILTIN_BOOL_ID: u8 = 3;
-pub const BUILTIN_STR_ID: u8 = 4;
-pub const BUILTIN_LEN_ID: u8 = 5;
-pub const BUILTIN_RANGE_ID: u8 = 6;
-pub const BUILTIN_FLOAT_ID: u8 = 7;
 
 #[cfg(test)]
 mod tests {

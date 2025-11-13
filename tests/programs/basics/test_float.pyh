@@ -3,63 +3,55 @@
 # Float 리터럴
 x = 3.14
 print(x)
+assert(x == 3.14)
 
 # float() 함수
 y = float(42)
 print(y)
+assert(y == 42.0)
 
 z = float("2.5")
 print(z)
+assert(z == 2.5)
 
 # Float 산술 연산
 a = 1.5 + 2.5
-print(a)
+assert(a == 4.0)
 
 b = 10.0 - 3.5
-print(b)
+assert(b == 6.5)
 
 c = 2.0 * 3.0
-print(c)
+assert(c == 6.0)
 
 d = 15.0 / 3.0
-print(d)
+assert(d == 5.0)
 
 e = 7.0 // 2.0
-print(e)
+assert(e == 3.0)
 
 f = 7.5 % 2.0
-print(f)
+assert(f == 1.5)
 
 # Int-Float 혼합 연산
 g = 10 + 2.5
-print(g)
+assert(g == 12.5)
 
 h = 20.0 - 5
-print(h)
+assert(h == 15.0)
 
 i = 3 * 2.5
-print(i)
+assert(i == 7.5)
 
 j = 10 / 4
-print(j)
+assert(j == 2.5)
 
 # Float 비교
-print(3.5 > 2.5)
-print(1.5 < 2.5)
-print(5.0 == 5.0)
-print(1.5 != 2.5)
+assert((3.5 > 2.5) == True)
+assert((1.5 < 2.5) == True)
+assert((5.0 == 5.0) == True)
+assert((1.5 != 2.5) == True)
 
 # Int-Float 비교
-print(3 < 3.5)
-print(4.0 > 3)
-
-
-
-
-
-
-
-
-
-
-
+assert((3 < 3.5) == True)
+assert((4.0 > 3) == True)

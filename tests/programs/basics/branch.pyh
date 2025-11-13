@@ -6,7 +6,14 @@ def f(x):
   else:
     return 1
 
-print(f(-3))
-print(f(0))
-print(f(7))
+r1 = f(-3)
+print(r1)
+assert(r1 == -1)
 
+r2 = f(0)
+print(r2)
+assert(r2 == 0)
+
+r3 = f(7)
+print(r3)
+assert(r3 == 1)

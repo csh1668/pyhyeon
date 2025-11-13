@@ -640,8 +640,10 @@ impl Vm {
                     VmErrorKind::TypeError("truediv"),
                     format!(
                         "unsupported operand types for /: '{}' and '{}'",
-                        self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
-                        self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                        self.get_type_name(&a, module)
+                            .unwrap_or_else(|_| "unknown".to_string()),
+                        self.get_type_name(&b, module)
+                            .unwrap_or_else(|_| "unknown".to_string())
                     ),
                 ));
             }
@@ -655,18 +657,17 @@ impl Vm {
                     VmErrorKind::TypeError("truediv"),
                     format!(
                         "unsupported operand types for /: '{}' and '{}'",
-                        self.get_type_name(&a, module).unwrap_or_else(|_| "unknown".to_string()),
-                        self.get_type_name(&b, module).unwrap_or_else(|_| "unknown".to_string())
+                        self.get_type_name(&a, module)
+                            .unwrap_or_else(|_| "unknown".to_string()),
+                        self.get_type_name(&b, module)
+                            .unwrap_or_else(|_| "unknown".to_string())
                     ),
                 ));
             }
         };
 
         if y_f64 == 0.0 {
-            return Err(err(
-                VmErrorKind::ZeroDivision,
-                "division by zero".into(),
-            ));
+            return Err(err(VmErrorKind::ZeroDivision, "division by zero".into()));
         }
 
         self.push(Value::Float(x_f64 / y_f64))?;
@@ -1273,7 +1274,7 @@ impl Vm {
         let argc = argc as usize;
 
         // input()은 특별 처리 (입력 대기)
-        if bid == crate::vm::builtins::BUILTIN_INPUT_ID {
+        if bid == crate::builtins::BUILTIN_INPUT_ID {
             return self.handle_builtin_input(argc, io);
         }
 
@@ -1412,7 +1413,7 @@ impl Vm {
                     }
                     // Builtin 클래스 호출 (range 등)
                     ObjectData::BuiltinClass { class_type } => {
-                        use crate::vm::type_def::BuiltinClassType;
+                        use crate::builtins::BuiltinClassType;
                         let result = match class_type {
                             BuiltinClassType::Range => {
                                 crate::vm::builtins::range::create_range(args)?
@@ -1565,7 +1566,7 @@ impl Vm {
         }
         items.reverse(); // 스택에서 꺼낸 순서를 역순으로
 
-        use crate::vm::type_def::TYPE_LIST;
+        use crate::builtins::TYPE_LIST;
         use crate::vm::value::{Object, ObjectData};
         use std::cell::RefCell;
         use std::rc::Rc;
@@ -1582,7 +1583,7 @@ impl Vm {
     }
 
     fn handle_build_dict(&mut self, pair_count: u16) -> VmResult<ExecutionFlow> {
-        use crate::vm::type_def::TYPE_DICT;
+        use crate::builtins::TYPE_DICT;
         use crate::vm::value::{DictKey, Object, ObjectData};
         use std::cell::RefCell;
         use std::collections::HashMap;
@@ -1819,7 +1820,7 @@ impl Vm {
         num_captures: u8,
         _module: &Module,
     ) -> VmResult<ExecutionFlow> {
-        use crate::vm::type_def::TYPE_FUNCTION;
+        use crate::builtins::TYPE_FUNCTION;
         use crate::vm::value::{Object, ObjectData};
         use std::rc::Rc;
 
@@ -1833,10 +1834,7 @@ impl Vm {
         // Create UserFunction object
         let func_obj = Value::Object(Rc::new(Object::new(
             TYPE_FUNCTION,
-            ObjectData::UserFunction {
-                func_id,
-                captures,
-            },
+            ObjectData::UserFunction { func_id, captures },
         )));
 
         self.push(func_obj)?;

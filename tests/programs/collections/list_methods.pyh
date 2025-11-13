@@ -4,38 +4,49 @@
 x = [1, 2, 3]
 x.append(4)
 print(x)
+assert(len(x) == 4)
+assert(x[3] == 4)
 
 # pop
 y = x.pop()
 print(y)
+assert(y == 4)
 print(x)
+assert(len(x) == 3)
 
 # extend
 x.extend([5, 6])
-print(x)
+assert(len(x) == 5)
+assert(x[3] == 5)
+assert(x[4] == 6)
 
 # insert
 x.insert(0, 0)
-print(x)
+assert(x[0] == 0)
+assert(len(x) == 6)
 
 # reverse
 x.reverse()
-print(x)
+assert(x[0] == 6)
+assert(x[5] == 0)
 
 # sort
 x.sort()
-print(x)
+assert(x[0] == 0)
+assert(x[1] == 1)
+assert(x[2] == 2)
+assert(x[3] == 3)
+assert(x[4] == 5)
+assert(x[5] == 6)
 
 # index
 idx = x.index(3)
-print(idx)
+assert(idx == 3)
 
 # count
 cnt = x.count(1)
-print(cnt)
+assert(cnt == 1)
 
 # clear
 x.clear()
-print(x)
-
-
+assert(len(x) == 0)

@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::type_def::BuiltinClassType;
+use crate::builtins::BuiltinClassType;
 
 /// 통일된 런타임 객체
 ///
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_object_with_attributes() {
-        use crate::vm::type_def::TYPE_STR;
+        use crate::builtins::TYPE_STR;
 
         let mut obj = Object::new_with_attrs(1, ObjectData::UserInstance { class_id: 0 });
         assert!(obj.attributes.is_some());

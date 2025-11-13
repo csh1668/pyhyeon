@@ -7,5 +7,6 @@ def sum_to(n):
     i = i + 1
   return s
 
-print(sum_to(5))
-
+result = sum_to(5)
+print(result)
+assert(result == 15)

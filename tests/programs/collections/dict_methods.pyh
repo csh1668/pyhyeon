@@ -1,26 +1,26 @@
 # Dict 메서드 테스트
 
 d = {"a": 1, "b": 2, "c": 3}
-print(d)
+assert(d["a"] == 1)
+assert(d["b"] == 2)
+assert(d["c"] == 3)
 
 # get
 v = d.get("a")
-print(v)
+assert(v == 1)
 
 # get with default
 v2 = d.get("z", 999)
-print(v2)
+assert(v2 == 999)
 
 # keys
 ks = d.keys()
-print(ks)
+assert(len(ks) == 3)
 
 # values
 vs = d.values()
-print(vs)
+assert(len(vs) == 3)
 
 # clear
 d.clear()
-print(d)
-
-
+assert(len(d) == 0)

@@ -38,7 +38,7 @@ impl Compiler {
             loop_stack: Vec::new(),
         }
     }
-    
+
     /// 기존 컨텍스트를 포함하여 컴파일러 생성 (REPL 등 증분 컴파일용)
     pub fn with_context(
         symbols: HashMap<String, u16>,
@@ -46,14 +46,14 @@ impl Compiler {
         existing_functions: Vec<FunctionCode>,
     ) -> Self {
         let mut module = Module::default();
-        
+
         // 심볼 테이블 초기화
         module.symbols = symbol_names;
         module.globals = vec![None; module.symbols.len()];
-        
+
         // 기존 함수들 복사 (resolve_function_id에서 찾을 수 있도록)
         module.functions = existing_functions;
-        
+
         Self {
             module,
             symbols,
@@ -86,13 +86,23 @@ impl Compiler {
         self.module
     }
 
-    fn emit_block(&mut self, block: &[StmtS], fun: &mut FunctionCode, locals: Option<&HashMap<String, u16>>) {
+    fn emit_block(
+        &mut self,
+        block: &[StmtS],
+        fun: &mut FunctionCode,
+        locals: Option<&HashMap<String, u16>>,
+    ) {
         for s in block {
             self.emit_stmt(s, fun, locals);
         }
     }
 
-    fn emit_stmt(&mut self, stmt: &StmtS, fun: &mut FunctionCode, locals: Option<&HashMap<String, u16>>) {
+    fn emit_stmt(
+        &mut self,
+        stmt: &StmtS,
+        fun: &mut FunctionCode,
+        locals: Option<&HashMap<String, u16>>,
+    ) {
         match &stmt.0 {
             Stmt::Break => {
                 // Add placeholder jump to break_jumps in current loop context
@@ -232,7 +242,10 @@ impl Compiler {
 
                 // Patch all continue jumps to loop start
                 for continue_pos in loop_ctx.continue_jumps {
-                    patch_rel(&mut fun.code[continue_pos], loop_start - (continue_pos as i32 + 1));
+                    patch_rel(
+                        &mut fun.code[continue_pos],
+                        loop_start - (continue_pos as i32 + 1),
+                    );
                 }
             }
             Stmt::For {
@@ -313,7 +326,10 @@ impl Compiler {
 
                 // Patch all continue jumps to loop start
                 for continue_pos in loop_ctx.continue_jumps {
-                    patch_rel(&mut fun.code[continue_pos], loop_start - (continue_pos as i32 + 1));
+                    patch_rel(
+                        &mut fun.code[continue_pos],
+                        loop_start - (continue_pos as i32 + 1),
+                    );
                 }
             }
             Stmt::Def { name, params, body } => {
@@ -412,7 +428,12 @@ impl Compiler {
         Ok(fid as u16)
     }
 
-    fn emit_expr(&mut self, expr: &ExprS, fun: &mut FunctionCode, locals: Option<&HashMap<String, u16>>) {
+    fn emit_expr(
+        &mut self,
+        expr: &ExprS,
+        fun: &mut FunctionCode,
+        locals: Option<&HashMap<String, u16>>,
+    ) {
         match &expr.0 {
             Expr::Literal(Literal::Int(i)) => fun.code.push(I::ConstI64(*i)),
             Expr::Literal(Literal::Float(f)) => fun.code.push(I::ConstF64(*f)),
@@ -647,7 +668,8 @@ impl Compiler {
                 }
 
                 // 8. MakeClosure instruction (캡처 개수 지정)
-                fun.code.push(I::MakeClosure(fid as u16, free_vars.len() as u8));
+                fun.code
+                    .push(I::MakeClosure(fid as u16, free_vars.len() as u8));
             }
         }
     }
@@ -673,7 +695,7 @@ impl Compiler {
         if name == "__main__" {
             return 0;
         }
-        
+
         // module.functions
         for (i, f) in self.module.functions.iter().enumerate() {
             if f.name_sym < self.module.symbols.len() as u16 {
@@ -683,7 +705,7 @@ impl Compiler {
                 }
             }
         }
-        
+
         // if not found, create empty stub
         let id = self.module.functions.len();
         let name_sym = self.intern(name);
@@ -864,15 +886,6 @@ fn get_or_add_string(module: &mut Module, s: String) -> u32 {
 }
 
 fn builtin_id(name: &str) -> Option<u8> {
-    match name {
-        "print" => Some(0),
-        "input" => Some(1),
-        "int" => Some(2),
-        "bool" => Some(3),
-        "str" => Some(4),
-        "len" => Some(5),
-        "range" => Some(6),
-        "float" => Some(7),
-        _ => None,
-    }
+    // Use centralized builtin registry
+    crate::builtins::lookup(name).map(|b| b.builtin_id)
 }

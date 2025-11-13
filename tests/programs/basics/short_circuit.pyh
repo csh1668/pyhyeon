@@ -1,4 +1,8 @@
 # short-circuit tests
-print(False and (1 // 0))
-print(True or (1 // 0))
+r1 = False and (1 // 0)
+print(r1)
+assert(r1 == False)
 
+r2 = True or (1 // 0)
+print(r2)
+assert(r2 == True)

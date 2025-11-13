@@ -25,16 +25,12 @@ pub fn call(args: Vec<Value>) -> VmResult<Value> {
             // String 객체를 Float로 변환 시도
             use super::super::value::ObjectData;
             match &obj.data {
-                ObjectData::String(s) => {
-                    s.trim().parse::<f64>()
-                        .map(Value::Float)
-                        .map_err(|_| {
-                            err(
-                                VmErrorKind::TypeError("float"),
-                                format!("could not convert string to float: '{}'", s),
-                            )
-                        })
-                }
+                ObjectData::String(s) => s.trim().parse::<f64>().map(Value::Float).map_err(|_| {
+                    err(
+                        VmErrorKind::TypeError("float"),
+                        format!("could not convert string to float: '{}'", s),
+                    )
+                }),
                 _ => Err(err(
                     VmErrorKind::TypeError("float"),
                     format!(

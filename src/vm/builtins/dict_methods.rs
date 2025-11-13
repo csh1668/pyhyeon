@@ -1,9 +1,9 @@
 //! Dict methods implementation
 
 use super::super::bytecode::Value;
-use super::super::type_def::{BuiltinClassType, TYPE_DICT, TYPE_LIST};
 use super::super::value::{BuiltinInstanceData, DictKey, Object, ObjectData};
 use super::super::{VmError, VmErrorKind, VmResult, err};
+use crate::builtins::{BuiltinClassType, TYPE_DICT, TYPE_LIST};
 use std::cell::RefCell;
 use std::rc::Rc;
 

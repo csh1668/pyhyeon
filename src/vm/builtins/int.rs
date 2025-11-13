@@ -2,7 +2,8 @@ use super::super::bytecode::Value;
 use super::super::type_def::{TypeDef, TypeFlags};
 use super::super::utils::expect_int;
 use super::super::{VmError, VmErrorKind, VmResult, err};
-use super::{TYPE_INT, type_name};
+use super::type_name;
+use crate::builtins::TYPE_INT;
 
 /// int() builtin 함수
 pub fn call(args: Vec<Value>) -> VmResult<Value> {

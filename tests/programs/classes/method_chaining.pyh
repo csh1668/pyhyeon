@@ -2,15 +2,15 @@
 class Builder:
   def __init__(self):
     self.value = ""
-  
+
   def add(self, s):
     self.value = self.value + s
     return self
-  
+
   def build(self):
     return self.value
 
 b = Builder()
 result = b.add("Hello").add(" ").add("World").build()
 print(result)
-
+assert(result == "Hello World")
