@@ -1,0 +1,12 @@
+# Benchmark: 10,000 function calls to trigger JIT
+def compute(x, y):
+  a = x + y
+  b = a * 2
+  c = b - 5
+  return c
+
+total = 0
+for i in range(10000):
+  total = total + compute(10, 20)
+
+print(total)

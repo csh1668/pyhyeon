@@ -24,6 +24,13 @@ instant = { version = "0.1", features = ["wasm-bindgen"] }
 bitflags = "2.6"
 strum = { version = "0.27.2", features = ["derive"] }
 
+# JIT compilation support (Cranelift)
+cranelift = "0.115"
+cranelift-module = "0.115"
+cranelift-jit = "0.115"
+cranelift-codegen = "0.115"
+target-lexicon = "0.12"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rustyline = "14.0"
 dirs = "5.0"

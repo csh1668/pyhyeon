@@ -1,0 +1,17 @@
+# Simple loop benchmark - no recursion, only arithmetic
+# This should successfully JIT compile
+
+def compute(n):
+  result = 0
+  i = 0
+  while i < n:
+    result = result + i
+    i = i + 1
+  return result
+
+# Warm-up + benchmark
+total = 0
+for j in range(2000):
+  total = compute(100)
+
+print(total)

@@ -1,0 +1,13 @@
+# Pure arithmetic benchmark - no function calls
+# JIT should work perfectly here
+
+total = 0
+for i in range(10000):
+  a = 10
+  b = 20
+  c = a + b
+  d = c * 2
+  e = d - 5
+  total = total + e
+
+print(total)

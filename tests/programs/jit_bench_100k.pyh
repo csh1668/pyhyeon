@@ -1,0 +1,14 @@
+# Benchmark: 100,000 function calls
+# First 1000 = interpreter
+# Remaining 99,000 = JIT native code
+def compute(x, y):
+  a = x + y
+  b = a * 2
+  c = b - 5
+  return c
+
+total = 0
+for i in range(100000):
+  total = total + compute(10, 20)
+
+print(total)

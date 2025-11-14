@@ -1,0 +1,15 @@
+# Fibonacci benchmark
+# This will trigger JIT after 1000 calls
+
+def fib(n):
+  if n < 2:
+    return n
+  return fib(n - 1) + fib(n - 2)
+
+# Warm-up: 처음 1000번은 인터프리터
+# 1001번째부터 JIT 컴파일되어 네이티브 코드 실행
+result = 0
+for i in range(2000):
+  result = fib(20)
+
+print(result)

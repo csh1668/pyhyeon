@@ -1,0 +1,12 @@
+# JIT compilation test
+# This program tests if hot functions get JIT compiled
+
+def fib(n):
+  if n < 2:
+    return n
+  return fib(n - 1) + fib(n - 2)
+
+# Call fib many times to trigger JIT
+for i in range(15):
+  result = fib(10)
+  print(result)

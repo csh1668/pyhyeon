@@ -6,6 +6,7 @@ pub mod builtins; // builtin 함수/클래스 통합 모듈
 pub mod bytecode;
 pub mod compiler;
 pub mod disasm; // 디스어셈블러
+pub mod jit; // JIT 컴파일러
 pub mod machine; // machine/ 디렉토리
 
 pub mod type_def;

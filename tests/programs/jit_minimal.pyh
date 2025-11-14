@@ -1,0 +1,9 @@
+# Minimal JIT test - just 1 call to compiled function
+def add(a, b):
+  return a + b
+
+# Call 1001 times to trigger JIT once
+for i in range(1001):
+  result = add(10, 20)
+
+print(result)

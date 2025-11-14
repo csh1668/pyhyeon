@@ -10,6 +10,9 @@ use crate::vm::value::{BuiltinInstanceData, Object, ObjectData};
 use std::cell::RefCell;
 use std::rc::Rc;
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::vm::jit::{JitCompiler, HotPathTracker, NativeFunction};
+
 // 서브모듈
 mod instruction;
 mod method_dispatch;
@@ -61,6 +64,18 @@ pub struct Vm {
     pub max_stack: usize,
     pub max_frames: usize,
     pub state: VmState,
+
+    // JIT 컴파일러 (옵션)
+    #[cfg(not(target_arch = "wasm32"))]
+    jit_compiler: Option<JitCompiler>,
+
+    // Hot path 추적
+    #[cfg(not(target_arch = "wasm32"))]
+    hot_path_tracker: HotPathTracker,
+
+    // JIT 컴파일된 함수 캐시
+    #[cfg(not(target_arch = "wasm32"))]
+    native_code_cache: std::collections::HashMap<usize, NativeFunction>,
 }
 
 // ========== 유틸리티 함수 ==========
@@ -92,6 +107,16 @@ impl Vm {
             max_stack: 1024,
             max_frames: 256,
             state: VmState::Running,
+
+            // JIT 컴파일러 초기화 (네이티브 플랫폼만)
+            #[cfg(not(target_arch = "wasm32"))]
+            jit_compiler: JitCompiler::new().ok(),
+
+            #[cfg(not(target_arch = "wasm32"))]
+            hot_path_tracker: HotPathTracker::new(),
+
+            #[cfg(not(target_arch = "wasm32"))]
+            native_code_cache: std::collections::HashMap::new(),
         }
     }
 
@@ -138,6 +163,48 @@ impl Vm {
                 let func = &module.functions[f.func_id];
                 (f.func_id, f.ip, func.code.len())
             };
+
+            // JIT 컴파일 체크 (함수 시작점에서만)
+            #[cfg(not(target_arch = "wasm32"))]
+            if ip == 0 {
+                // Hot path 추적
+                if self.hot_path_tracker.record_execution(func_id) {
+                    // Hot 함수! JIT 컴파일 시도
+                    if !self.native_code_cache.contains_key(&func_id) {
+                        if let Some(ref mut jit) = self.jit_compiler {
+                            match jit.compile(func_id, &module.functions[func_id]) {
+                                Ok(native_fn) => {
+                                    self.native_code_cache.insert(func_id, native_fn);
+                                    eprintln!("[JIT] Compiled function {} ({})", func_id, module.functions[func_id].name_sym);
+                                }
+                                Err(_e) => {
+                                    // JIT 컴파일 실패 - 인터프리터로 폴백 (조용히)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // JIT 컴파일된 함수 실행
+                if let Some(&native_fn) = self.native_code_cache.get(&func_id) {
+                    let result = unsafe { native_fn(self as *mut Vm) };
+                    if result == 0 {
+                        // 성공 - 함수 종료
+                        let ret = self.leave_frame()?;
+                        if self.frames.is_empty() {
+                            self.state = VmState::Finished;
+                            return Ok(ret);
+                        }
+                        if let Some(v) = ret {
+                            self.push(v)?;
+                        }
+                        continue;
+                    } else {
+                        // 에러 - 폴백하여 인터프리터 실행 (조용히)
+                    }
+                }
+            }
+
             if ip >= code_len {
                 let ret = self.leave_frame()?;
                 if self.frames.is_empty() {
@@ -175,7 +242,7 @@ impl Vm {
 
     // ========== 스택 연산 ==========
 
-    fn push(&mut self, v: Value) -> VmResult<()> {
+    pub fn push(&mut self, v: Value) -> VmResult<()> {
         if self.stack.len() >= self.max_stack {
             return Err(err(VmErrorKind::StackOverflow, "stack overflow".into()));
         }
@@ -183,7 +250,7 @@ impl Vm {
         Ok(())
     }
 
-    fn pop(&mut self) -> VmResult<Value> {
+    pub fn pop(&mut self) -> VmResult<Value> {
         self.stack
             .pop()
             .ok_or_else(|| err(VmErrorKind::StackUnderflow, "stack underflow".into()))
