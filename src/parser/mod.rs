@@ -19,27 +19,12 @@ enum PostfixOp {
     Index(ExprS, Span),
 }
 
-// Release 빌드에서만 boxed를 적용하여 빌드 속도 개선
-#[cfg(not(debug_assertions))]
-macro_rules! maybe_boxed {
-    ($parser:expr) => {
-        $parser.boxed()
-    };
-}
-
-#[cfg(debug_assertions)]
-macro_rules! maybe_boxed {
-    ($parser:expr) => {
-        $parser
-    };
-}
-
 pub fn expr_parser<'tokens, I>()
 -> impl Parser<'tokens, I, ExprS, extra::Err<RichTokenError<'tokens>>>
 where
     I: ValueInput<'tokens, Token = Token, Span = SimpleSpan> + 'tokens,
 {
-    maybe_boxed!(recursive(|expr| {
+    recursive(|expr| {
         let ident = select! { Token::Identifier(s) => s }.labelled("identifier");
 
         // List literal: [expr, expr, ...]
@@ -50,7 +35,8 @@ where
             .collect()
             .delimited_by(just(Token::LBracket), just(Token::RBracket))
             .map(Expr::List)
-            .labelled("list literal");
+            .labelled("list literal")
+            .boxed();
 
         // Dict literal: {key: value, key: value, ...}
         let dict_literal = expr
@@ -62,7 +48,8 @@ where
             .collect()
             .delimited_by(just(Token::LBrace), just(Token::RBrace))
             .map(Expr::Dict)
-            .labelled("dict literal");
+            .labelled("dict literal")
+            .boxed();
 
         // Primary: literals, variables, parenthesized expressions
         let primary = choice((
@@ -84,7 +71,7 @@ where
         .map_with(|node: Expr, e| {
             let s: I::Span = e.span();
             (node, s.into_range())
-        });
+        }).boxed();
 
         // Postfix: handles ., (), and [] chaining
         let postfix_op = choice((
@@ -112,7 +99,7 @@ where
                     let s: I::Span = e.span();
                     PostfixOp::Index(index, s.into_range())
                 }),
-        ));
+        )).boxed();
 
         let atom = primary.foldl(postfix_op.repeated(), |base: ExprS, op: PostfixOp| {
             let start = base.1.start;
@@ -151,7 +138,7 @@ where
                     )
                 }
             }
-        });
+        }).boxed();
 
         // Capture unary operator with its span
         let op_unary = choice((
@@ -162,9 +149,9 @@ where
         .map_with(|op, e| {
             let s: I::Span = e.span();
             (op, s.into_range())
-        });
+        }).boxed();
 
-        let unary = maybe_boxed!(op_unary.repeated().foldr(
+        let unary = op_unary.repeated().foldr(
             atom,
             |(op, op_span): (UnaryOp, Span), right: ExprS| {
                 let span = op_span.start..right.1.end;
@@ -176,11 +163,10 @@ where
                     span,
                 )
             }
-        ));
+        ).boxed();
 
-        let op = |t| just(t).ignored();
-        let product = maybe_boxed!(
-            unary.clone().foldl(
+        let op = |t| just(t).ignored().boxed();
+        let product = unary.clone().foldl(
                 choice((
                     op(Token::Star).to(BinaryOp::Multiply),
                     op(Token::SlashSlash).to(BinaryOp::FloorDivide),
@@ -200,10 +186,8 @@ where
                         span,
                     )
                 },
-            )
-        );
-        let sum = maybe_boxed!(
-            product.clone().foldl(
+        ).boxed();
+        let sum = product.clone().foldl(
                 choice((
                     op(Token::Plus).to(BinaryOp::Add),
                     op(Token::Minus).to(BinaryOp::Subtract),
@@ -221,10 +205,8 @@ where
                         span,
                     )
                 },
-            )
-        );
-        let comparison = maybe_boxed!(
-            sum.clone().foldl(
+            ).boxed();
+        let comparison = sum.clone().foldl(
                 choice((
                     op(Token::Less).to(BinaryOp::Less),
                     op(Token::LessEqual).to(BinaryOp::LessEqual),
@@ -246,9 +228,8 @@ where
                         span,
                     )
                 },
-            )
-        );
-        let and_expr = maybe_boxed!(comparison.clone().foldl(
+            ).boxed();
+        let and_expr = comparison.clone().foldl(
             op(Token::And).to(BinaryOp::And).then(comparison).repeated(),
             |left: ExprS, (op, right): (BinaryOp, ExprS)| {
                 let span = left.1.start..right.1.end;
@@ -261,8 +242,8 @@ where
                     span,
                 )
             },
-        ));
-        let or_expr = maybe_boxed!(and_expr.clone().foldl(
+        ).boxed();
+        let or_expr = and_expr.clone().foldl(
             op(Token::Or).to(BinaryOp::Or).then(and_expr).repeated(),
             |left: ExprS, (op, right): (BinaryOp, ExprS)| {
                 let span = left.1.start..right.1.end;
@@ -275,10 +256,7 @@ where
                     span,
                 )
             },
-        ));
-
-        // Lambda expression at top level: lambda x, y: expr
-        let or_expr_boxed = or_expr.boxed();
+        ).boxed();
 
         let lambda_expr = just(Token::Lambda)
             .ignore_then(
@@ -301,8 +279,8 @@ where
             })
             .labelled("lambda expression");
 
-        choice((lambda_expr, or_expr_boxed)).labelled("expression")
-    }))
+        choice((lambda_expr, or_expr)).labelled("expression")
+    }).boxed()
 }
 
 pub fn stmt_parser<'tokens, I>()
@@ -312,17 +290,18 @@ where
 {
     let expr = expr_parser().boxed();
 
-    maybe_boxed!(recursive(|stmt| {
+    recursive(|stmt| {
         let ident = select! { Token::Identifier(s) => s }.labelled("identifier");
 
         // Line end (either newline or end of input)
-        let line_end = just(Token::Newline).ignored().or(end().ignored());
+        let line_end = just(Token::Newline).ignored().or(end().ignored()).boxed();
 
         // Simple statement kinds (no line ending consumption here)
         let return_stmt = just(Token::Return)
             .ignore_then(expr.clone())
             .map(Stmt::Return)
-            .labelled("return statement");
+            .labelled("return statement")
+            .boxed();
 
         let assign_stmt = expr
             .clone()
@@ -335,22 +314,26 @@ where
                     value,
                 }
             })
-            .labelled("assignment");
+            .labelled("assignment")
+            .boxed();
 
         let expr_stmt = expr
             .clone()
             .map(Stmt::Expr)
-            .labelled("expression statement");
+            .labelled("expression statement")
+            .boxed();
 
         let break_stmt = just(Token::Break)
             .to(Stmt::Break)
-            .labelled("break statement");
+            .labelled("break statement")
+            .boxed();
 
         let continue_stmt = just(Token::Continue)
             .to(Stmt::Continue)
-            .labelled("continue statement");
+            .labelled("continue statement")
+            .boxed();
 
-        let pass_stmt = just(Token::Pass).to(Stmt::Pass).labelled("pass statement");
+        let pass_stmt = just(Token::Pass).to(Stmt::Pass).labelled("pass statement").boxed();
 
         // A line of one or more simple statements separated by ';' with optional trailing ';'
         let simple_stmt = choice((
@@ -364,7 +347,7 @@ where
         .map_with(|node: Stmt, e| {
             let s: I::Span = e.span();
             (node, s.into_range())
-        });
+        }).boxed();
 
         let simple_stmts_line = simple_stmt
             .separated_by(just(Token::Semicolon))
@@ -372,7 +355,7 @@ where
             .at_least(1)
             .collect::<Vec<StmtS>>()
             .then_ignore(line_end.clone())
-            .labelled("simple statements");
+            .labelled("simple statements").boxed();
 
         // Helper: parse a block after a ':'
         // Support both indented blocks and inline simple_stmts on the same line
@@ -386,10 +369,9 @@ where
                     .ignore_then(just(Token::Newline).ignored().repeated())
                     .ignore_then(just(Token::Indent)),
                 just(Token::Dedent),
-            );
+            ).boxed();
 
-        let block =
-            just(Token::Colon).ignore_then(choice((indented_block, simple_stmts_line.clone())));
+        let block = just(Token::Colon).ignore_then(choice((indented_block, simple_stmts_line.clone()))).boxed();
 
         let def_stmt = just(Token::Def)
             .ignore_then(ident)
@@ -408,7 +390,8 @@ where
                     body,
                 },
             )
-            .labelled("def statement");
+            .labelled("def statement")
+            .boxed();
 
         let if_stmt = just(Token::If)
             .ignore_then(expr.clone())
@@ -429,13 +412,15 @@ where
                     else_block,
                 },
             )
-            .labelled("if statement");
+            .labelled("if statement")
+            .boxed();
 
         let while_stmt = just(Token::While)
             .ignore_then(expr.clone())
             .then(block.clone())
             .map(|(condition, body)| Stmt::While { condition, body })
-            .labelled("while statement");
+            .labelled("while statement")
+            .boxed();
 
         let for_stmt = just(Token::For)
             .ignore_then(ident)
@@ -447,7 +432,8 @@ where
                 iterable,
                 body,
             })
-            .labelled("for statement");
+            .labelled("for statement")
+            .boxed();
 
         // Class statement
         let method_def = just(Token::Def)
@@ -460,7 +446,9 @@ where
                     .delimited_by(just(Token::LParen), just(Token::RParen)),
             )
             .then(block.clone())
-            .map(|((name, params), body)| MethodDef { name, params, body });
+            .map(|((name, params), body)| MethodDef { name, params, body })
+            .labelled("method definition")
+            .boxed();
 
         let class_stmt = just(Token::Class)
             .ignore_then(ident)
@@ -489,7 +477,8 @@ where
                     attributes: vec![], // v1에서는 클래스 속성 미지원
                 }
             })
-            .labelled("class statement");
+            .labelled("class statement")
+            .boxed();
 
         // Compound statements occupy the whole logical line
         let compound_stmt_line = choice((class_stmt, def_stmt, if_stmt, while_stmt, for_stmt))
@@ -497,10 +486,10 @@ where
                 let s: I::Span = e.span();
                 (node, s.into_range())
             })
-            .map(|s| vec![s]);
+            .map(|s| vec![s]).boxed();
 
         // Allow empty lines between statements
-        let blank_lines = just(Token::Newline).ignored().repeated();
+        let blank_lines = just(Token::Newline).ignored().repeated().boxed();
 
         choice((compound_stmt_line, simple_stmts_line))
             .padded_by(blank_lines)
@@ -511,7 +500,7 @@ where
                     .or(just(Token::Dedent).ignored())
                     .or(end().ignored()),
             ))
-    }))
+    }).boxed()
 }
 
 pub fn program_parser<'tokens, I>()
@@ -522,14 +511,12 @@ where
     let line = stmt_parser().boxed();
     let blanks = just(Token::Newline).ignored().repeated();
 
-    maybe_boxed!(
-        blanks
+    blanks
             .clone()
             .ignore_then(line.clone().repeated().collect::<Vec<Vec<StmtS>>>())
             .map(|lines| lines.into_iter().flatten().collect::<Vec<StmtS>>())
             .then_ignore(blanks)
-            .then_ignore(end())
-    )
+            .then_ignore(end()).boxed()
 }
 
 #[cfg(test)]
