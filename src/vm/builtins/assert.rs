@@ -1,4 +1,4 @@
-use crate::vm::{Value, VmErrorKind, VmResult, builtins::bool_builtin, err};
+use crate::vm::{Value, VmErrorKind, VmResult, builtins::bool, err};
 
 /// assert builtin 함수
 pub fn call(args: Vec<Value>) -> VmResult<Value> {
@@ -12,7 +12,7 @@ pub fn call(args: Vec<Value>) -> VmResult<Value> {
         ));
     }
     // let v = &args[0];
-    let b = bool_builtin::to_bool(&args[0]);
+    let b = bool::to_bool(&args[0]);
     if !b {
         return Err(err(
             VmErrorKind::AssertionError,

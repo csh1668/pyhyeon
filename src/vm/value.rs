@@ -141,6 +141,20 @@ pub enum BuiltinInstanceData {
         keys: Vec<DictKey>,
         current: RefCell<usize>,
     },
+
+    /// Map iterator 상태
+    MapIterator {
+        func: Box<crate::vm::bytecode::Value>,
+        source_iter: Box<crate::vm::bytecode::Value>,
+    },
+
+    /// Filter iterator 상태
+    FilterIterator {
+        func: Box<crate::vm::bytecode::Value>,
+        source_iter: Box<crate::vm::bytecode::Value>,
+        /// 미리 찾아둔 다음 값 (peek buffer)
+        peeked: std::cell::RefCell<Option<crate::vm::bytecode::Value>>,
+    },
 }
 
 #[cfg(test)]

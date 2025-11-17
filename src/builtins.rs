@@ -12,6 +12,8 @@ pub const BUILTIN_FLOAT_ID: u8 = 7;
 pub const BUILTIN_LIST_ID: u8 = 8;
 pub const BUILTIN_DICT_ID: u8 = 9;
 pub const BUILTIN_ASSERT_ID: u8 = 10;
+pub const BUILTIN_MAP_ID: u8 = 11;
+pub const BUILTIN_FILTER_ID: u8 = 12;
 
 // ========== 빌트인 타입 ID ==========
 // 0-99는 builtin 타입, 100+는 사용자 정의 타입 (TYPE_USER_START는 type_def.rs에 정의)
@@ -24,6 +26,8 @@ pub const TYPE_LIST: u16 = 5;
 pub const TYPE_DICT: u16 = 6;
 pub const TYPE_FLOAT: u16 = 7;
 pub const TYPE_FUNCTION: u16 = 8;
+pub const TYPE_MAP_ITER: u16 = 9;
+pub const TYPE_FILTER_ITER: u16 = 10;
 
 // ========== 빌트인 클래스 타입 ==========
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -34,6 +38,10 @@ pub enum BuiltinClassType {
     List,
     /// `{"a": 1}` 타입
     Dict,
+    /// `map(function, iterable)` 타입
+    MapIter,
+    /// `filter(function, iterable)` 타입
+    FilterIter,
     // 미래 확장:
     // Set,    // `{1, 2, 3}`
     // Tuple,  // `(1, 2, 3)`
@@ -46,6 +54,8 @@ impl BuiltinClassType {
             Self::Range => "range",
             Self::List => "list",
             Self::Dict => "dict",
+            Self::MapIter => "map_iter",
+            Self::FilterIter => "filter_iter",
         }
     }
 }
@@ -117,6 +127,18 @@ const ASSERT: BuiltinFunction = BuiltinFunction {
     builtin_id: BUILTIN_ASSERT_ID,
 };
 
+const MAP: BuiltinFunction = BuiltinFunction {
+    name: "map",
+    arity: Arity::Range(2, 2),
+    builtin_id: BUILTIN_MAP_ID,
+};
+
+const FILTER: BuiltinFunction = BuiltinFunction {
+    name: "filter",
+    arity: Arity::Range(2, 2),
+    builtin_id: BUILTIN_FILTER_ID,
+};
+
 // TODO: Uncomment when list() and dict() constructors are implemented
 // const LIST: Builtin = Builtin {
 //     name: "list",
@@ -130,7 +152,7 @@ const ASSERT: BuiltinFunction = BuiltinFunction {
 //     builtin_id: BUILTIN_DICT_ID,
 // };
 
-static REGISTRY: &[BuiltinFunction] = &[PRINT, INPUT, INT, BOOL, STR, LEN, RANGE, FLOAT, ASSERT];
+static REGISTRY: &[BuiltinFunction] = &[PRINT, INPUT, INT, BOOL, STR, LEN, RANGE, FLOAT, ASSERT, MAP, FILTER];
 // TODO: Add LIST and DICT to registry when implemented
 // static REGISTRY: &[Builtin] = &[PRINT, INPUT, INT, BOOL, STR, LEN, RANGE, FLOAT, LIST, DICT, ASSERT];
 

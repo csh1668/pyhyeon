@@ -2,7 +2,7 @@ use super::super::bytecode::{Module, Value};
 use super::super::type_def::{Arity, MethodImpl};
 use super::super::utils::expect_string;
 use super::super::value::ObjectData;
-use super::{Vm, VmErrorKind, VmResult, err};
+use super::{Frame, Vm, VmErrorKind, VmResult, err};
 use crate::builtins::{TYPE_BOOL, TYPE_FLOAT, TYPE_INT, TYPE_NONE, TYPE_STR};
 use crate::runtime_io::RuntimeIo;
 use crate::vm::builtins::float;
@@ -107,7 +107,7 @@ impl Vm {
         method_impl: MethodImpl,
         receiver: &Value,
         args: Vec<Value>,
-        module: &Module,
+        module: &mut Module,
         io: &mut IO,
     ) -> VmResult<Option<Value>> {
         match method_impl {
@@ -161,7 +161,7 @@ impl Vm {
         &mut self,
         method_sym: u16,
         argc: usize,
-        module: &Module,
+        module: &mut Module,
         io: &mut IO,
     ) -> VmResult<()> {
         // 1. 인자 수집
@@ -256,15 +256,15 @@ impl Vm {
     /// Native 메서드 디스패처
     ///
     /// NativeMethod ID에 따라 적절한 Rust 함수를 실행합니다.
-    pub(super) fn call_native_method_dispatch(
-        &self,
+    pub(super) fn call_native_method_dispatch<IO: RuntimeIo>(
+        &mut self,
         method: super::super::type_def::NativeMethod,
         receiver: &Value,
         args: Vec<Value>,
-        _module: &Module,
-        _io: &mut dyn RuntimeIo,
+        module: &mut Module,
+        io: &mut IO,
     ) -> VmResult<Value> {
-        use super::super::builtins::{dict_methods, int, list_methods, range, str_builtin};
+        use super::super::builtins::{dict_methods, filter, int, list_methods, map, range, str_methods};
         use super::super::type_def::NativeMethod as NM;
 
         // builtins 모듈에서 직접 호출
@@ -303,26 +303,26 @@ impl Vm {
             NM::FloatNe => float::float_ne(receiver, args),
 
             // String 매직 메서드들
-            NM::StrAdd => str_builtin::str_add(receiver, args),
-            NM::StrMul => str_builtin::str_mul(receiver, args),
-            NM::StrLt => str_builtin::str_lt(receiver, args),
-            NM::StrLe => str_builtin::str_le(receiver, args),
-            NM::StrGt => str_builtin::str_gt(receiver, args),
-            NM::StrGe => str_builtin::str_ge(receiver, args),
-            NM::StrEq => str_builtin::str_eq(receiver, args),
-            NM::StrNe => str_builtin::str_ne(receiver, args),
+            NM::StrAdd => str_methods::str_add(receiver, args),
+            NM::StrMul => str_methods::str_mul(receiver, args),
+            NM::StrLt => str_methods::str_lt(receiver, args),
+            NM::StrLe => str_methods::str_le(receiver, args),
+            NM::StrGt => str_methods::str_gt(receiver, args),
+            NM::StrGe => str_methods::str_ge(receiver, args),
+            NM::StrEq => str_methods::str_eq(receiver, args),
+            NM::StrNe => str_methods::str_ne(receiver, args),
 
             // String 일반 메서드들
-            NM::StrUpper => str_builtin::str_upper(receiver, args),
-            NM::StrLower => str_builtin::str_lower(receiver, args),
-            NM::StrStrip => str_builtin::str_strip(receiver, args),
-            NM::StrSplit => str_builtin::str_split(receiver, args),
-            NM::StrJoin => str_builtin::str_join(receiver, args),
-            NM::StrReplace => str_builtin::str_replace(receiver, args),
-            NM::StrStartsWith => str_builtin::str_starts_with(receiver, args),
-            NM::StrEndsWith => str_builtin::str_ends_with(receiver, args),
-            NM::StrFind => str_builtin::str_find(receiver, args),
-            NM::StrCount => str_builtin::str_count(receiver, args),
+            NM::StrUpper => str_methods::str_upper(receiver, args),
+            NM::StrLower => str_methods::str_lower(receiver, args),
+            NM::StrStrip => str_methods::str_strip(receiver, args),
+            NM::StrSplit => str_methods::str_split(receiver, args),
+            NM::StrJoin => str_methods::str_join(receiver, args),
+            NM::StrReplace => str_methods::str_replace(receiver, args),
+            NM::StrStartsWith => str_methods::str_starts_with(receiver, args),
+            NM::StrEndsWith => str_methods::str_ends_with(receiver, args),
+            NM::StrFind => str_methods::str_find(receiver, args),
+            NM::StrCount => str_methods::str_count(receiver, args),
 
             // Range 메서드들
             NM::RangeIter => range::range_iter(receiver, args),
@@ -355,6 +355,16 @@ impl Vm {
             NM::DictIter => dict_methods::dict_iter(receiver, args),
             NM::DictHasNext => dict_methods::dict_has_next(receiver, args),
             NM::DictNext => dict_methods::dict_next(receiver, args),
+
+            // Map Iterator 메서드들
+            NM::MapIter => map::map_iter(receiver, args),
+            NM::MapHasNext => map::map_has_next(receiver, args, module, self, io),
+            NM::MapNext => map::map_next(receiver, args, module, self, io),
+
+            // Filter Iterator 메서드들
+            NM::FilterIter => filter::filter_iter(receiver, args),
+            NM::FilterHasNext => filter::filter_has_next(receiver, args, module, self, io),
+            NM::FilterNext => filter::filter_next(receiver, args, module, self, io),
         }
     }
 
@@ -365,6 +375,126 @@ impl Vm {
         match v {
             Value::Object(obj) => obj.type_id == TYPE_STR,
             _ => false,
+        }
+    }
+
+    /// 메서드 호출 헬퍼 (builtin 함수에서 사용)
+    ///
+    /// receiver.method_name(args...) 형태의 호출을 수행합니다.
+    pub fn call_method<IO: RuntimeIo>(
+        &mut self,
+        receiver: &Value,
+        method_name: &str,
+        args: Vec<Value>,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<Value> {
+        // 메서드 조회
+        let method_impl = self.lookup_method(receiver, method_name, module)?;
+
+        // 메서드 호출
+        match self.call_method_impl(method_impl, receiver, args, module, io)? {
+            Some(result) => Ok(result),
+            None => {
+                // UserDefined 메서드는 동기적으로 호출할 수 없음
+                // 이 경우는 현재 구조상 발생하지 않아야 함
+                Err(err(
+                    VmErrorKind::TypeError("method"),
+                    "cannot call user-defined method synchronously from builtin".into(),
+                ))
+            }
+        }
+    }
+
+    /// 함수 호출 헬퍼 (builtin 함수에서 사용)
+    ///
+    /// func(args...) 형태의 호출을 수행합니다.
+    pub fn call_function<IO: RuntimeIo>(
+        &mut self,
+        func: &Value,
+        args: Vec<Value>,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<Value> {
+        match func {
+            Value::Object(obj) => match &obj.data {
+                ObjectData::UserFunction { func_id, captures } => {
+                    // 인자들을 스택에 푸시
+                    for arg in args.iter() {
+                        self.push(arg.clone())?;
+                    }
+
+                    // enter_func_with_captures를 사용하여 프레임 생성
+                    self.enter_func_with_captures(
+                        module,
+                        *func_id as usize,
+                        args.len(),
+                        captures.clone(),
+                    )?;
+
+                    // 함수 실행 (Return instruction이 자동으로 leave_frame 호출)
+                    let result = self.run_function(module, io)?;
+
+                    Ok(result)
+                }
+                _ => Err(err(
+                    VmErrorKind::TypeError("function"),
+                    format!("'{}' object is not callable", super::super::utils::type_name(func)),
+                )),
+            },
+            _ => Err(err(
+                VmErrorKind::TypeError("function"),
+                format!("'{}' object is not callable", super::super::utils::type_name(func)),
+            )),
+        }
+    }
+
+    /// 함수를 끝까지 실행하고 반환값을 얻음 (동기적 실행)
+    fn run_function<IO: RuntimeIo>(
+        &mut self,
+        module: &mut Module,
+        io: &mut IO,
+    ) -> VmResult<Value> {
+        // 시작 시점의 프레임 개수 저장 (nested 호출 대응)
+        let initial_frame_count = self.frames.len();
+
+        loop {
+            // 함수가 종료되면 (초기 프레임 개수보다 적어지면) 반환
+            if self.frames.len() < initial_frame_count {
+                // 함수가 종료됨 - 스택에서 반환값 팝
+                return self.pop();
+            }
+
+            // 현재 프레임 가져오기
+            let frame_idx = self.frames.len() - 1;
+            let ip = self.frames[frame_idx].ip;
+            let func_id = self.frames[frame_idx].func_id;
+
+            // inst를 복사하여 mutable borrow 문제 해결
+            let inst = module.functions[func_id].code[ip].clone();
+
+            // IP 증가
+            self.frames[frame_idx].ip += 1;
+
+            // 명령어 실행
+            let result = self.execute_instruction(&inst, module, io)?;
+
+            match result {
+                super::instruction::ExecutionFlow::Continue => continue,
+                super::instruction::ExecutionFlow::Return(Some(val)) => {
+                    return Ok(val);
+                }
+                super::instruction::ExecutionFlow::Return(None) => {
+                    return Ok(Value::None);
+                }
+                super::instruction::ExecutionFlow::WaitingForInput => {
+                    // 동기적 실행 중에는 input()을 사용할 수 없음
+                    return Err(err(
+                        VmErrorKind::TypeError("input"),
+                        "cannot use input() in builtin context".into(),
+                    ));
+                }
+            }
         }
     }
 }

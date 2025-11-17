@@ -97,11 +97,11 @@ fn test_int_arity_two() {
 #[test]
 fn test_bool_from_bool() {
     assert_eq!(
-        bool_builtin::call(vec![Value::Bool(true)]).unwrap(),
+        bool::call(vec![Value::Bool(true)]).unwrap(),
         Value::Bool(true)
     );
     assert_eq!(
-        bool_builtin::call(vec![Value::Bool(false)]).unwrap(),
+        bool::call(vec![Value::Bool(false)]).unwrap(),
         Value::Bool(false)
     );
 }
@@ -109,7 +109,7 @@ fn test_bool_from_bool() {
 #[test]
 fn test_bool_from_int_zero() {
     assert_eq!(
-        bool_builtin::call(vec![Value::Int(0)]).unwrap(),
+        bool::call(vec![Value::Int(0)]).unwrap(),
         Value::Bool(false)
     );
 }
@@ -117,15 +117,15 @@ fn test_bool_from_int_zero() {
 #[test]
 fn test_bool_from_int_nonzero() {
     assert_eq!(
-        bool_builtin::call(vec![Value::Int(1)]).unwrap(),
+        bool::call(vec![Value::Int(1)]).unwrap(),
         Value::Bool(true)
     );
     assert_eq!(
-        bool_builtin::call(vec![Value::Int(-5)]).unwrap(),
+        bool::call(vec![Value::Int(-5)]).unwrap(),
         Value::Bool(true)
     );
     assert_eq!(
-        bool_builtin::call(vec![Value::Int(100)]).unwrap(),
+        bool::call(vec![Value::Int(100)]).unwrap(),
         Value::Bool(true)
     );
 }
@@ -133,7 +133,7 @@ fn test_bool_from_int_nonzero() {
 #[test]
 fn test_bool_from_none() {
     assert_eq!(
-        bool_builtin::call(vec![Value::None]).unwrap(),
+        bool::call(vec![Value::None]).unwrap(),
         Value::Bool(false)
     );
 }
@@ -141,18 +141,18 @@ fn test_bool_from_none() {
 #[test]
 fn test_bool_from_string_empty() {
     let args = vec![make_string("".into())];
-    assert_eq!(bool_builtin::call(args).unwrap(), Value::Bool(false));
+    assert_eq!(bool::call(args).unwrap(), Value::Bool(false));
 }
 
 #[test]
 fn test_bool_from_string_nonempty() {
     let args = vec![make_string("hello".into())];
-    assert_eq!(bool_builtin::call(args).unwrap(), Value::Bool(true));
+    assert_eq!(bool::call(args).unwrap(), Value::Bool(true));
 }
 
 #[test]
 fn test_bool_arity_zero() {
-    let err = bool_builtin::call(vec![]).unwrap_err();
+    let err = bool::call(vec![]).unwrap_err();
     assert!(matches!(
         err.kind,
         VmErrorKind::ArityError {
@@ -164,7 +164,7 @@ fn test_bool_arity_zero() {
 
 #[test]
 fn test_bool_arity_two() {
-    let err = bool_builtin::call(vec![Value::Bool(true), Value::Bool(false)]).unwrap_err();
+    let err = bool::call(vec![Value::Bool(true), Value::Bool(false)]).unwrap_err();
     assert!(matches!(
         err.kind,
         VmErrorKind::ArityError {
@@ -178,7 +178,7 @@ fn test_bool_arity_two() {
 
 #[test]
 fn test_str_from_int() {
-    let result = str_builtin::call(vec![Value::Int(42)]).unwrap();
+    let result = str_methods::call(vec![Value::Int(42)]).unwrap();
     if let Value::Object(obj) = result {
         if let crate::vm::value::ObjectData::String(s) = &obj.data {
             assert_eq!(s, "42");
@@ -192,7 +192,7 @@ fn test_str_from_int() {
 
 #[test]
 fn test_str_from_bool() {
-    let result = str_builtin::call(vec![Value::Bool(true)]).unwrap();
+    let result = str_methods::call(vec![Value::Bool(true)]).unwrap();
     if let Value::Object(obj) = result {
         if let crate::vm::value::ObjectData::String(s) = &obj.data {
             assert_eq!(s, "True");
@@ -206,7 +206,7 @@ fn test_str_from_bool() {
 
 #[test]
 fn test_str_from_none() {
-    let result = str_builtin::call(vec![Value::None]).unwrap();
+    let result = str_methods::call(vec![Value::None]).unwrap();
     if let Value::Object(obj) = result {
         if let crate::vm::value::ObjectData::String(s) = &obj.data {
             assert_eq!(s, "None");
@@ -220,7 +220,7 @@ fn test_str_from_none() {
 
 #[test]
 fn test_str_arity_zero() {
-    let err = str_builtin::call(vec![]).unwrap_err();
+    let err = str_methods::call(vec![]).unwrap_err();
     assert!(matches!(
         err.kind,
         VmErrorKind::ArityError {
@@ -436,7 +436,7 @@ fn test_print_multiple_args() {
 #[test]
 fn test_str_upper() {
     let receiver = make_string("hello".into());
-    let result = str_builtin::str_upper(&receiver, vec![]).unwrap();
+    let result = str_methods::str_upper(&receiver, vec![]).unwrap();
     if let Value::Object(obj) = result {
         if let crate::vm::value::ObjectData::String(s) = &obj.data {
             assert_eq!(s, "HELLO");
@@ -451,7 +451,7 @@ fn test_str_upper() {
 #[test]
 fn test_str_lower() {
     let receiver = make_string("WORLD".into());
-    let result = str_builtin::str_lower(&receiver, vec![]).unwrap();
+    let result = str_methods::str_lower(&receiver, vec![]).unwrap();
     if let Value::Object(obj) = result {
         if let crate::vm::value::ObjectData::String(s) = &obj.data {
             assert_eq!(s, "world");
@@ -466,7 +466,7 @@ fn test_str_lower() {
 #[test]
 fn test_str_strip() {
     let receiver = make_string("  trim me  ".into());
-    let result = str_builtin::str_strip(&receiver, vec![]).unwrap();
+    let result = str_methods::str_strip(&receiver, vec![]).unwrap();
     if let Value::Object(obj) = result {
         if let crate::vm::value::ObjectData::String(s) = &obj.data {
             assert_eq!(s, "trim me");
@@ -483,7 +483,7 @@ fn test_str_replace() {
     let receiver = make_string("hello world".into());
     let old = make_string("world".into());
     let new = make_string("rust".into());
-    let result = str_builtin::str_replace(&receiver, vec![old, new]).unwrap();
+    let result = str_methods::str_replace(&receiver, vec![old, new]).unwrap();
     if let Value::Object(obj) = result {
         if let crate::vm::value::ObjectData::String(s) = &obj.data {
             assert_eq!(s, "hello rust");
@@ -499,7 +499,7 @@ fn test_str_replace() {
 fn test_str_startswith_true() {
     let receiver = make_string("hello".into());
     let prefix = make_string("hel".into());
-    let result = str_builtin::str_starts_with(&receiver, vec![prefix]).unwrap();
+    let result = str_methods::str_starts_with(&receiver, vec![prefix]).unwrap();
     assert_eq!(result, Value::Bool(true));
 }
 
@@ -507,7 +507,7 @@ fn test_str_startswith_true() {
 fn test_str_startswith_false() {
     let receiver = make_string("hello".into());
     let prefix = make_string("world".into());
-    let result = str_builtin::str_starts_with(&receiver, vec![prefix]).unwrap();
+    let result = str_methods::str_starts_with(&receiver, vec![prefix]).unwrap();
     assert_eq!(result, Value::Bool(false));
 }
 
@@ -515,7 +515,7 @@ fn test_str_startswith_false() {
 fn test_str_endswith_true() {
     let receiver = make_string("hello".into());
     let suffix = make_string("lo".into());
-    let result = str_builtin::str_ends_with(&receiver, vec![suffix]).unwrap();
+    let result = str_methods::str_ends_with(&receiver, vec![suffix]).unwrap();
     assert_eq!(result, Value::Bool(true));
 }
 
@@ -523,7 +523,7 @@ fn test_str_endswith_true() {
 fn test_str_find_found() {
     let receiver = make_string("hello world".into());
     let substr = make_string("world".into());
-    let result = str_builtin::str_find(&receiver, vec![substr]).unwrap();
+    let result = str_methods::str_find(&receiver, vec![substr]).unwrap();
     assert_eq!(result, Value::Int(6));
 }
 
@@ -531,7 +531,7 @@ fn test_str_find_found() {
 fn test_str_find_not_found() {
     let receiver = make_string("hello".into());
     let substr = make_string("xyz".into());
-    let result = str_builtin::str_find(&receiver, vec![substr]).unwrap();
+    let result = str_methods::str_find(&receiver, vec![substr]).unwrap();
     assert_eq!(result, Value::Int(-1));
 }
 
@@ -539,6 +539,6 @@ fn test_str_find_not_found() {
 fn test_str_count() {
     let receiver = make_string("hello hello hello".into());
     let substr = make_string("hello".into());
-    let result = str_builtin::str_count(&receiver, vec![substr]).unwrap();
+    let result = str_methods::str_count(&receiver, vec![substr]).unwrap();
     assert_eq!(result, Value::Int(3));
 }

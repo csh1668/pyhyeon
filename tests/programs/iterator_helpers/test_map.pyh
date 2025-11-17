@@ -1,0 +1,5 @@
+# map 기본 테스트
+numbers = [1, 2, 3, 4, 5]
+squared = map(lambda x: x * x, numbers)
+for n in squared:
+  print(n)

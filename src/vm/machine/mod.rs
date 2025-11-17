@@ -206,12 +206,12 @@ impl Vm {
 
     // ========== 프레임 관리 ==========
 
-    fn enter_func(&mut self, module: &Module, func_id: usize, argc: usize) -> VmResult<()> {
+    pub(super) fn enter_func(&mut self, module: &Module, func_id: usize, argc: usize) -> VmResult<()> {
         // 캡처 없는 함수 호출 (호환성)
         self.enter_func_with_captures(module, func_id, argc, vec![])
     }
 
-    fn enter_func_with_captures(
+    pub(super) fn enter_func_with_captures(
         &mut self,
         module: &Module,
         func_id: usize,
@@ -251,7 +251,7 @@ impl Vm {
         Ok(())
     }
 
-    fn leave_frame(&mut self) -> VmResult<Option<Value>> {
+    pub(super) fn leave_frame(&mut self) -> VmResult<Option<Value>> {
         // 스택에 반환값이 있으면 팝, 없으면 None 반환 (암묵적 return)
         let ret = if self.stack.len() > self.frames.last().unwrap().ret_stack_size {
             self.stack.pop()

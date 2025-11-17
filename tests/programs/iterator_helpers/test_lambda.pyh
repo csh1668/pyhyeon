@@ -1,0 +1,7 @@
+# Lambda 테스트
+check = lambda x: x % 2 == 0
+print(check(0))
+print(check(1))
+print(check(2))
+print(check(3))
+print(check(4))

@@ -145,6 +145,16 @@ pub enum NativeMethod {
     DictIter,
     DictHasNext,
     DictNext,
+
+    // ========== Map Iterator 메서드들 ==========
+    MapIter,
+    MapHasNext,
+    MapNext,
+
+    // ========== Filter Iterator 메서드들 ==========
+    FilterIter,
+    FilterHasNext,
+    FilterNext,
 }
 
 impl NativeMethod {
@@ -236,6 +246,16 @@ impl NativeMethod {
             Self::DictIter => "__iter__",
             Self::DictHasNext => "__has_next__",
             Self::DictNext => "__next__",
+
+            // Map Iterator 메서드
+            Self::MapIter => "__iter__",
+            Self::MapHasNext => "__has_next__",
+            Self::MapNext => "__next__",
+
+            // Filter Iterator 메서드
+            Self::FilterIter => "__iter__",
+            Self::FilterHasNext => "__has_next__",
+            Self::FilterNext => "__next__",
         }
     }
 }
@@ -821,6 +841,54 @@ pub fn init_builtin_types() -> Vec<TypeDef> {
         ]),
         // TYPE_FUNCTION (8)
         TypeDef::new("function", TypeFlags::CALLABLE),
+        // TYPE_MAP_ITER (9)
+        TypeDef::new("map_iterator", TypeFlags::ITERABLE).with_methods(vec![
+            (
+                "__iter__",
+                MethodImpl::Native {
+                    func: NativeMethod::MapIter,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__has_next__",
+                MethodImpl::Native {
+                    func: NativeMethod::MapHasNext,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__next__",
+                MethodImpl::Native {
+                    func: NativeMethod::MapNext,
+                    arity: Arity::Exact(0),
+                },
+            ),
+        ]),
+        // TYPE_FILTER_ITER (10)
+        TypeDef::new("filter_iterator", TypeFlags::ITERABLE).with_methods(vec![
+            (
+                "__iter__",
+                MethodImpl::Native {
+                    func: NativeMethod::FilterIter,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__has_next__",
+                MethodImpl::Native {
+                    func: NativeMethod::FilterHasNext,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__next__",
+                MethodImpl::Native {
+                    func: NativeMethod::FilterNext,
+                    arity: Arity::Exact(0),
+                },
+            ),
+        ]),
     ]
 }
 

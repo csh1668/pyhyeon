@@ -1432,6 +1432,13 @@ impl Vm {
                                     "dict() constructor not yet implemented".to_string(),
                                 ));
                             }
+                            BuiltinClassType::MapIter | BuiltinClassType::FilterIter => {
+                                // map/filter는 직접 호출할 수 없음 (builtin 함수로만 생성 가능)
+                                return Err(err(
+                                    VmErrorKind::TypeError("iterator constructor"),
+                                    format!("{} cannot be called directly", class_type.name()),
+                                ));
+                            }
                         };
                         self.push(result)?;
                     }

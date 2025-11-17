@@ -6,7 +6,7 @@ use super::bytecode::Value;
 use super::type_def::TYPE_USER_START;
 use super::value::{BuiltinInstanceData, DictKey, Object, ObjectData};
 use super::{VmError, VmErrorKind, VmResult, err};
-use crate::builtins::{BuiltinClassType, TYPE_DICT, TYPE_LIST, TYPE_RANGE, TYPE_STR};
+use crate::builtins::{BuiltinClassType, TYPE_DICT, TYPE_FILTER_ITER, TYPE_LIST, TYPE_MAP_ITER, TYPE_RANGE, TYPE_STR};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -193,6 +193,8 @@ pub fn make_builtin_class(class_type: BuiltinClassType) -> Value {
         BuiltinClassType::Range => TYPE_RANGE,
         BuiltinClassType::List => TYPE_LIST,
         BuiltinClassType::Dict => TYPE_DICT,
+        BuiltinClassType::MapIter => TYPE_MAP_ITER,
+        BuiltinClassType::FilterIter => TYPE_FILTER_ITER,
     };
     Value::Object(Rc::new(Object::new(
         type_id,

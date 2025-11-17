@@ -55,13 +55,13 @@ pub struct ClassDef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Display)]
 pub enum Instruction {
     // constants
-    ConstI64(i64),
+    ConstI64(i64),  // Push constant value onto stack
     ConstF64(f64),
     ConstStr(u32),
-    LoadConst(u32), // Load constant from consts array
     True,
     False,
     None,
+    LoadConst(u32), // Load constant from consts array
 
     // stack operations
     Pop,
@@ -170,8 +170,7 @@ pub struct Module {
 
     /// 타입 테이블 (builtin + user-defined)
     ///
-    /// Python의 타입 시스템을 구현합니다.
-    /// 인덱스 0-99는 builtin 타입, 100+는 사용자 정의 타입입니다.
+    /// 인덱스 0-99는 builtin 타입, 100+는 사용자 정의 타입
     #[serde(skip)]
     pub types: Vec<super::type_def::TypeDef>,
 }
@@ -204,13 +203,14 @@ impl Module {
 mod tests {
     use super::*;
     use crate::vm::type_def::*;
+    use crate::builtins::{TYPE_MAP_ITER, TYPE_FILTER_ITER};
 
     #[test]
     fn test_module_type_table_initialization() {
         let module = Module::new();
 
-        // 타입 테이블이 9개 (int, bool, str, NoneType, range, list, dict, float, function) 초기화되어야 함
-        assert_eq!(module.types.len(), 9);
+        // 타입 테이블이 11개 (int, bool, str, NoneType, range, list, dict, float, function, map_iterator, filter_iterator) 초기화되어야 함
+        assert_eq!(module.types.len(), 11);
 
         // 각 타입의 이름 확인
         assert_eq!(module.types[TYPE_INT as usize].name, "int");
@@ -222,6 +222,8 @@ mod tests {
         assert_eq!(module.types[TYPE_DICT as usize].name, "dict");
         assert_eq!(module.types[TYPE_FLOAT as usize].name, "float");
         assert_eq!(module.types[TYPE_FUNCTION as usize].name, "function");
+        assert_eq!(module.types[TYPE_MAP_ITER as usize].name, "map_iterator");
+        assert_eq!(module.types[TYPE_FILTER_ITER as usize].name, "filter_iterator");
     }
 
     #[test]

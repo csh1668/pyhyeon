@@ -1,0 +1,9 @@
+# Combined map and filter test
+numbers = range(10)
+
+# Filter even numbers, then square them
+evens = filter(lambda x: x % 2 == 0, numbers)
+squares = map(lambda x: x * x, evens)
+
+for n in squares:
+  print(n)

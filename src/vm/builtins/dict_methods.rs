@@ -5,7 +5,9 @@ use super::super::value::{BuiltinInstanceData, DictKey, Object, ObjectData};
 use super::super::{VmError, VmErrorKind, VmResult, err};
 use crate::builtins::{BuiltinClassType, TYPE_DICT, TYPE_LIST};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
+use crate::vm::utils::make_dict;
 
 /// dict.get(key, default=None)
 pub fn dict_get(receiver: &Value, args: Vec<Value>) -> VmResult<Value> {

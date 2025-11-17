@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use super::bytecode::{ClassDef, FunctionCode, Instruction as I, Module};
 use crate::parser::ast::{BinaryOp, Expr, ExprS, Literal, MethodDef, Stmt, StmtS, UnaryOp};
 use std::collections::{HashMap, HashSet};

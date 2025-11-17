@@ -1,0 +1,5 @@
+# 디버깅용 filter 테스트
+numbers = [0, 1, 2, 3, 4]
+evens = filter(lambda x: x % 2 == 0, numbers)
+for e in evens:
+  print(e)

@@ -1,0 +1,5 @@
+# filter 기본 테스트
+numbers = range(10)
+evens = filter(lambda x: x % 2 == 0, numbers)
+for e in evens:
+  print(e)
