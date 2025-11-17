@@ -53,7 +53,7 @@ pub fn typecheck_program(program: &[StmtS], ctx: &super::ProgramContext) -> Sema
 
     // Walk module-level statements
     for stmt in program {
-        tc_stmt(stmt, &mut tenv, ctx, None, false)?;
+        tc_stmt(stmt, &mut tenv, ctx, &mut Some(Ty::Unknown), false)?;
     }
     Ok(())
 }
@@ -62,7 +62,7 @@ fn tc_stmt(
     stmt: &StmtS,
     tenv: &mut TypeEnv,
     ctx: &super::ProgramContext,
-    current_fn_return: Option<*mut Ty>,
+    current_fn_return: &mut Option<Ty>,
     in_loop: bool,
 ) -> SemanticResult<()> {
     match &stmt.0 {
@@ -139,18 +139,15 @@ fn tc_stmt(
         Stmt::Return(expr) => {
             let t = tc_expr(expr, tenv, ctx)?;
             if let Some(ptr) = current_fn_return {
-                // SAFETY: ptr was created from a valid &mut Ty in Def arm and lives until function scope ends
-                unsafe {
-                    let old = *ptr;
-                    let new = unify_return(old, t).ok_or_else(|| SemanticError {
-                        message: format!(
-                            "TypeError: inconsistent return types in function: {:?} vs {:?}",
-                            old, t
-                        ),
-                        span: expr.1.clone(),
-                    })?;
-                    *ptr = new;
-                }
+                let old = *ptr;
+                let new = unify_return(old, t).ok_or_else(|| SemanticError {
+                    message: format!(
+                        "TypeError: inconsistent return types in function: {:?} vs {:?}",
+                        old, t
+                    ),
+                    span: expr.1.clone(),
+                })?;
+                *ptr = new;
             }
             Ok(())
         }
@@ -280,10 +277,9 @@ fn tc_stmt(
             for p in params {
                 tenv.set(p.clone(), Ty::Unknown);
             }
-            let mut ret: Ty = Ty::Unknown;
-            let ret_ptr: *mut Ty = &mut ret;
+            let mut ret = Ty::Unknown;
             for s in body {
-                tc_stmt(s, tenv, ctx, Some(ret_ptr), false)?;
+                tc_stmt(s, tenv, ctx, &mut Some(ret), false)?;
             }
             tenv.pop();
             let _ = ret; // currently unused for call-site checks
