@@ -277,7 +277,7 @@ fn tc_stmt(
             for p in params {
                 tenv.set(p.clone(), Ty::Unknown);
             }
-            let mut ret = Ty::Unknown;
+            let ret = Ty::Unknown;
             for s in body {
                 tc_stmt(s, tenv, ctx, &mut Some(ret), false)?;
             }
@@ -656,8 +656,8 @@ fn with_env<F: FnOnce(&mut TypeEnv)>(tenv: &mut TypeEnv, f: F) {
     f(tenv);
 }
 fn collect_assigned(base: &TypeEnv, changed: &TypeEnv, out: &mut HashSet<String>) {
-    let base_top = base.frames.last().unwrap();
-    let changed_top = changed.frames.last().unwrap();
+    let base_top = base.frames.last().expect("base.frames should always be non-empty");
+    let changed_top = changed.frames.last().expect("changed.frames should always be non-empty");
     for (k, v) in changed_top.iter() {
         if base_top.get(k) != Some(v) {
             out.insert(k.clone());

@@ -1,6 +1,1 @@
-# Interactive input example
-name = input()
-print("Hello, " + name + "!")
-
-age = int(input())
-print("You are " + str(age) + " years old.")
+x = -99999999999999999999

@@ -43,20 +43,37 @@ impl Diagnostic {
 
 pub fn parse_source(src: &str) -> Result<Vec<parser::ast::StmtS>, Vec<Diagnostic>> {
     let mut lexer = lexer::Lexer::new(src);
-    let mut reached_eof = false;
-    let token_iter = std::iter::from_fn(move || {
-        if reached_eof {
-            return None;
-        }
+
+    // First pass: collect all tokens and check for lexer errors
+    let mut tokens = Vec::new();
+    let mut lexer_errors = Vec::new();
+
+    loop {
         let (t, span) = lexer.next_token_with_span();
-        if t == lexer::token::Token::Eof {
-            reached_eof = true;
-            return None;
+
+        // Check for lexer errors
+        if let lexer::token::Token::Error(msg, error_span) = t {
+            lexer_errors.push(Diagnostic {
+                message: msg,
+                span: error_span,
+            });
+            continue; // Skip error tokens
         }
-        Some((t, SimpleSpan::new(span.start, span.end)))
-    });
+
+        if t == lexer::token::Token::Eof {
+            break;
+        }
+
+        tokens.push((t, SimpleSpan::new(span.start, span.end)));
+    }
+
+    // If there are lexer errors, return them immediately
+    if !lexer_errors.is_empty() {
+        return Err(lexer_errors);
+    }
+
     let eoi_span = parser::SimpleSpan::new(src.len(), src.len());
-    let token_stream = Stream::from_iter(token_iter).map(eoi_span, |(t, s)| (t, s));
+    let token_stream = Stream::from_iter(tokens).map(eoi_span, |(t, s)| (t, s));
     match parser::program_parser().parse(token_stream).into_result() {
         Ok(program) => Ok(program),
         Err(errors) => {

@@ -11,6 +11,14 @@ pub use chumsky::span::SimpleSpan;
 
 type RichTokenError<'a> = Rich<'a, Token>;
 
+// Helper enum for parsing postfix operations (internal to parser)
+#[derive(Debug, Clone)]
+enum PostfixOp {
+    Attr(String, Span),
+    Call(Vec<ExprS>, Span),
+    Index(ExprS, Span),
+}
+
 // Release 빌드에서만 boxed를 적용하여 빌드 속도 개선
 #[cfg(not(debug_assertions))]
 macro_rules! maybe_boxed {
@@ -24,13 +32,6 @@ macro_rules! maybe_boxed {
     ($parser:expr) => {
         $parser
     };
-}
-
-#[derive(Debug, Clone)]
-enum PostfixOp {
-    Attr(String),
-    Call(Vec<ExprS>),
-    Index(ExprS),
 }
 
 pub fn expr_parser<'tokens, I>()
@@ -86,28 +87,39 @@ where
         });
 
         // Postfix: handles ., (), and [] chaining
-        // Example: obj.attr, obj.method(), obj[0], obj[i].attr
         let postfix_op = choice((
             // .attr (attribute access)
-            just(Token::Dot).ignore_then(ident).map(PostfixOp::Attr),
+            just(Token::Dot)
+                .ignore_then(ident)
+                .map_with(|attr, e| {
+                    let s: I::Span = e.span();
+                    PostfixOp::Attr(attr, s.into_range())
+                }),
             // (args) (function/method call)
             expr.clone()
                 .separated_by(just(Token::Comma))
                 .allow_trailing()
                 .collect()
                 .delimited_by(just(Token::LParen), just(Token::RParen))
-                .map(PostfixOp::Call),
+                .map_with(|args, e| {
+                    let s: I::Span = e.span();
+                    PostfixOp::Call(args, s.into_range())
+                }),
             // [index] (indexing)
             expr.clone()
                 .delimited_by(just(Token::LBracket), just(Token::RBracket))
-                .map(PostfixOp::Index),
+                .map_with(|index, e| {
+                    let s: I::Span = e.span();
+                    PostfixOp::Index(index, s.into_range())
+                }),
         ));
 
         let atom = primary.foldl(postfix_op.repeated(), |base: ExprS, op: PostfixOp| {
             let start = base.1.start;
             match op {
-                PostfixOp::Attr(attr) => {
-                    let end = start + attr.len(); // rough estimate
+                // {base}.{attr}
+                PostfixOp::Attr(attr, op_span) => {
+                    let end = op_span.end;  // use actual span end from parser
                     (
                         Expr::Attribute {
                             object: Box::new(base),
@@ -116,8 +128,9 @@ where
                         start..end,
                     )
                 }
-                PostfixOp::Call(args) => {
-                    let end = start + 10; // rough estimate
+                // {base}({args})
+                PostfixOp::Call(args, op_span) => {
+                    let end = op_span.end;  // use actual span end from parser
                     (
                         Expr::Call {
                             func_name: Box::new(base),
@@ -126,8 +139,9 @@ where
                         start..end,
                     )
                 }
-                PostfixOp::Index(index) => {
-                    let end = index.1.end;
+                // {base}[{index}]
+                PostfixOp::Index(index, op_span) => {
+                    let end = op_span.end;  // use actual span end from parser
                     (
                         Expr::Index {
                             object: Box::new(base),

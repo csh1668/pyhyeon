@@ -52,7 +52,9 @@ impl<'source> Lexer<'source> {
             }
             Some(Err(_)) => {
                 let span = self.inner.span();
-                let error_msg = format!("Invalid token '{}'", self.inner.slice());
+                // Check if a specific error message was stored in extras
+                let error_msg = self.inner.extras.error_message.take()
+                    .unwrap_or_else(|| format!("Invalid token '{}'", self.inner.slice()));
                 (Token::Error(error_msg, span.clone()), span)
             }
             None => {
@@ -94,6 +96,7 @@ impl<'source> Lexer<'source> {
                         ),
                         tab_span,
                     ));
+                    return;
                 }
                 _ => break,
             }
@@ -308,6 +311,85 @@ def sub(a, b):
         for expected in expected_tokens {
             let token = lexer.next_token();
             assert_eq!(token, expected);
+        }
+    }
+
+    #[test]
+    fn test_integer_overflow() {
+        // i64::MAX is 9223372036854775807
+        let source = "99999999999999999999";
+        let mut lexer = Lexer::new(source);
+        let token = lexer.next_token();
+        match token {
+            Token::Error(msg, _) => {
+                assert!(msg.contains("out of range"), "Expected overflow error, got: {}", msg);
+                assert!(msg.contains("99999999999999999999"), "Error should include the literal");
+            }
+            _ => panic!("Expected error token for integer overflow, got: {:?}", token),
+        }
+    }
+
+    #[test]
+    fn test_integer_just_below_max() {
+        // i64::MAX is 9223372036854775807
+        let source = "9223372036854775807";
+        let mut lexer = Lexer::new(source);
+        let token = lexer.next_token();
+        assert_eq!(token, Token::Int(9223372036854775807));
+    }
+
+    #[test]
+    fn test_integer_overflow_edge_case() {
+        // i64::MAX + 1
+        let source = "9223372036854775808";
+        let mut lexer = Lexer::new(source);
+        let token = lexer.next_token();
+        match token {
+            Token::Error(msg, _) => {
+                assert!(msg.contains("out of range"), "Expected overflow error, got: {}", msg);
+            }
+            _ => panic!("Expected error token for integer overflow, got: {:?}", token),
+        }
+    }
+
+    #[test]
+    fn test_float_overflow() {
+        // A float that's too large to represent
+        let source = "9.9e999";
+        let mut lexer = Lexer::new(source);
+        let token = lexer.next_token();
+        match token {
+            Token::Error(msg, _) => {
+                assert!(msg.contains("out of range"), "Expected float overflow error, got: {}", msg);
+                assert!(msg.contains("9.9e999"), "Error should include the literal");
+            }
+            _ => panic!("Expected error token for float overflow, got: {:?}", token),
+        }
+    }
+
+    #[test]
+    fn test_float_normal() {
+        let source = "3.14159";
+        let mut lexer = Lexer::new(source);
+        let token = lexer.next_token();
+        match token {
+            Token::Float(f) => {
+                assert!((f - 3.14159).abs() < 0.00001);
+            }
+            _ => panic!("Expected float token, got: {:?}", token),
+        }
+    }
+
+    #[test]
+    fn test_float_scientific_notation() {
+        let source = "1.5e10";
+        let mut lexer = Lexer::new(source);
+        let token = lexer.next_token();
+        match token {
+            Token::Float(f) => {
+                assert!((f - 1.5e10).abs() < 1.0);
+            }
+            _ => panic!("Expected float token, got: {:?}", token),
         }
     }
 }

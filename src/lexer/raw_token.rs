@@ -1,8 +1,15 @@
 use logos::Logos;
 
+/// Stores error context during lexing to provide better error messages
+#[derive(Default, Debug, Clone)]
+pub struct LexerExtras {
+    pub error_message: Option<String>,
+}
+
 #[derive(Logos, Debug, PartialEq, Clone)]
 #[logos(skip r"[ \t\r]+")]
 #[logos(skip r"#[^\n]*")]
+#[logos(extras = LexerExtras)]
 pub enum RawToken {
     // Keywords
     #[token("if")]
@@ -44,7 +51,8 @@ pub enum RawToken {
     #[token("True", |_| true)]
     #[token("False", |_| false)]
     Bool(bool),
-    #[regex(r"[0-9]+", lex_integer)]
+    // #[regex(r"[0-9]+", lex_integer)]
+    #[regex(r"[+-]?[0-9]+", lex_integer)]
     Int(i64),
     #[regex(r#""([^"\\]|\\.)*""#, lex_string)]
     #[regex(r#"'([^'\\]|\\.)*'"#, lex_string)]
@@ -110,12 +118,41 @@ pub enum RawToken {
 
 fn lex_integer(lexer: &mut logos::Lexer<RawToken>) -> Option<i64> {
     let slice = lexer.slice();
-    slice.parse::<i64>().ok()
+    match slice.parse::<i64>() {
+        Ok(value) => Some(value),
+        Err(_) => {
+            // Overflow error
+            lexer.extras.error_message = Some(format!(
+                "Integer literal '{}' is out of range (valid range: {} to {})",
+                slice,
+                i64::MIN,
+                i64::MAX
+            ));
+            None
+        }
+    }
 }
 
 fn lex_float(lexer: &mut logos::Lexer<RawToken>) -> Option<f64> {
     let slice = lexer.slice();
-    slice.parse::<f64>().ok()
+    match slice.parse::<f64>() {
+        Ok(f) if f.is_finite() => Some(f),
+        Ok(_) => {
+            // Infinite value
+            lexer.extras.error_message = Some(format!(
+                "Float literal '{}' is out of range (max: {:.2e}, min: {:.2e})",
+                slice,
+                f64::MAX,
+                f64::MIN
+            ));
+            None
+        }
+        Err(_) => {
+            // Parse error
+            lexer.extras.error_message = Some(format!("Invalid float literal '{}'", slice));
+            None
+        }
+    }
 }
 
 fn lex_string(lexer: &mut logos::Lexer<RawToken>) -> Option<String> {
