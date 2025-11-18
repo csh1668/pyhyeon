@@ -251,7 +251,20 @@ fn analyze_expr_module(
             Ok(())
         }
         Expr::Lambda { params, body } => {
-            // Lambda는 새로운 스코프를 생성
+            // Check for unbound captured variables
+            let mut free_vars = HashSet::new();
+            collect_free_vars(body, params, &mut free_vars);
+
+            for var in &free_vars {
+                if !scopes.is_defined(var) && !ctx.is_builtin(var) {
+                    return Err(SemanticError {
+                        message: format!("Undefined variable '{}' captured by lambda", var),
+                        span: expr.1.clone(),
+                    });
+                }
+            }
+
+            // Analyze the lambda body in a new scope
             scopes.push();
             for p in params {
                 scopes.define(p.clone());
@@ -333,6 +346,58 @@ fn collect_locals(body: &Vec<StmtS>, locals: &mut HashSet<String>) {
             }
             Stmt::Break | Stmt::Continue | Stmt::Pass => {}
             Stmt::Return(_) | Stmt::Expr(_) => {}
+        }
+    }
+}
+
+fn collect_free_vars(expr: &ExprS, params: &Vec<String>, free_vars: &mut HashSet<String>) {
+    match &expr.0 {
+        Expr::Variable(name) => {
+            if !params.contains(name) {
+                free_vars.insert(name.clone());
+            }
+        }
+        Expr::Literal(_) => {}
+        Expr::Unary { expr, .. } => collect_free_vars(expr, params, free_vars),
+        Expr::Binary { left, right, .. } => {
+            collect_free_vars(left, params, free_vars);
+            collect_free_vars(right, params, free_vars);
+        }
+        Expr::Call { func_name, args } => {
+            collect_free_vars(func_name, params, free_vars);
+            for arg in args {
+                collect_free_vars(arg, params, free_vars);
+            }
+        }
+        Expr::Attribute { object, .. } => {
+            collect_free_vars(object, params, free_vars);
+        }
+        Expr::List(elements) => {
+            for elem in elements {
+                collect_free_vars(elem, params, free_vars);
+            }
+        }
+        Expr::Dict(pairs) => {
+            for (key, value) in pairs {
+                collect_free_vars(key, params, free_vars);
+                collect_free_vars(value, params, free_vars);
+            }
+        }
+        Expr::Index { object, index } => {
+            collect_free_vars(object, params, free_vars);
+            collect_free_vars(index, params, free_vars);
+        }
+        Expr::Lambda {
+            params: inner_params,
+            body,
+        } => {
+            let mut inner_free_vars = HashSet::new();
+            collect_free_vars(body, inner_params, &mut inner_free_vars);
+            for var in inner_free_vars {
+                if !params.contains(&var) {
+                    free_vars.insert(var);
+                }
+            }
         }
     }
 }
@@ -531,18 +596,30 @@ fn analyze_expr_function(
             Ok(())
         }
         Expr::Lambda { params, body } => {
-            // Lambda는 새로운 스코프를 생성
+            // Check for unbound captured variables
+            let mut free_vars = HashSet::new();
+            collect_free_vars(body, params, &mut free_vars);
+
+            for var in &free_vars {
+                if locals.contains(var) && !assigned.contains(var) {
+                    return Err(SemanticError {
+                        message: format!("Unbound local variable '{}' captured by lambda", var),
+                        span: expr.1.clone(),
+                    });
+                }
+            }
+
+            // Analyze the lambda body in a new scope
             scopes.push();
-
-            // Lambda의 로컬 변수 = 파라미터만 (body는 단일 표현식이므로 할당 없음)
-            let lambda_locals: HashSet<String> = params.iter().cloned().collect();
-            let lambda_assigned: HashSet<String> = params.iter().cloned().collect();
-
             for p in params {
                 scopes.define(p.clone());
             }
 
-            analyze_expr_function(body, scopes, ctx, &lambda_locals, &lambda_assigned)?;
+            // The body of a lambda is an expression, so it can't contain assignments.
+            // Its locals are just its parameters.
+            let lambda_locals: HashSet<String> = params.iter().cloned().collect();
+            analyze_expr_function(body, scopes, ctx, &lambda_locals, &lambda_locals)?;
+
             scopes.pop();
             Ok(())
         }

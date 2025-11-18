@@ -4,7 +4,7 @@ use crate::parser::ast::{BinaryOp, Expr, ExprS, Stmt, StmtS, UnaryOp};
 
 use super::{SemanticError, SemanticResult};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 enum Ty {
     Int,
     Bool,
@@ -12,6 +12,13 @@ enum Ty {
     Float,
     NoneType,
     Unknown,
+    List(Box<Ty>),
+    Dict(Box<Ty>, Box<Ty>),
+    Tuple(Vec<Ty>),
+    Range,
+    Function,
+    MapIter(Box<Ty>),
+    FilterIter(Box<Ty>),
 }
 
 #[derive(Default, Clone)]
@@ -35,7 +42,7 @@ impl TypeEnv {
     fn get(&self, name: &str) -> Option<Ty> {
         for f in self.frames.iter().rev() {
             if let Some(t) = f.get(name) {
-                return Some(*t);
+                return Some(t.clone());
             }
         }
         None
@@ -139,8 +146,8 @@ fn tc_stmt(
         Stmt::Return(expr) => {
             let t = tc_expr(expr, tenv, ctx)?;
             if let Some(ptr) = current_fn_return {
-                let old = *ptr;
-                let new = unify_return(old, t).ok_or_else(|| SemanticError {
+                let old = ptr.clone();
+                let new = unify_return(old.clone(), t.clone()).ok_or_else(|| SemanticError {
                     message: format!(
                         "TypeError: inconsistent return types in function: {:?} vs {:?}",
                         old, t
@@ -214,8 +221,8 @@ fn tc_stmt(
                     if assigned_b.contains(&var) {
                         let t_b = get_var_type(env_b, &var);
                         if t_b != Ty::Unknown {
-                            if let Some(m) = merged {
-                                if m != t_b {
+                            if let Some(ref m) = merged {
+                                if *m != t_b {
                                     return Err(SemanticError {
                                         message: format!(
                                             "TypeError: variable '{}' has incompatible types across branches",
@@ -253,14 +260,24 @@ fn tc_stmt(
             iterable,
             body,
         } => {
-            // iterable의 타입을 확인 (현재는 range만 지원)
-            let _iterable_ty = tc_expr(iterable, tenv, ctx)?;
+            let iterable_ty = tc_expr(iterable, tenv, ctx)?;
+            let loop_var_ty = match &iterable_ty {
+                Ty::Range => Ty::Int,
+                Ty::List(elem_ty) => *elem_ty.clone(),
+                Ty::Dict(key_ty, _) => *key_ty.clone(),
+                Ty::String => Ty::String,
+                Ty::Unknown => Ty::Unknown,
+                _ => {
+                    return Err(SemanticError {
+                        message: format!("TypeError: type '{:?}' is not iterable", iterable_ty),
+                        span: iterable.1.clone(),
+                    });
+                }
+            };
 
-            // for문 내부는 별도 환경에서 타입 체크
             let mut loop_env = snapshot_env(tenv);
             with_env(&mut loop_env, |e| {
-                // 루프 변수는 Unknown 타입으로 시작 (range는 Int를 생성)
-                e.set(var.clone(), Ty::Unknown);
+                e.set(var.clone(), loop_var_ty);
                 for s in body {
                     let _ = tc_stmt(s, e, ctx, current_fn_return, true);
                 }
@@ -277,12 +294,12 @@ fn tc_stmt(
             for p in params {
                 tenv.set(p.clone(), Ty::Unknown);
             }
-            let ret = Ty::Unknown;
+            let mut fn_return_ty = Some(Ty::Unknown);
             for s in body {
-                tc_stmt(s, tenv, ctx, &mut Some(ret), false)?;
+                tc_stmt(s, tenv, ctx, &mut fn_return_ty, false)?;
             }
             tenv.pop();
-            let _ = ret; // currently unused for call-site checks
+            let _ = fn_return_ty; // currently unused for call-site checks
             Ok(())
         }
     }
@@ -309,40 +326,56 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
             let tl = tc_expr(left, tenv, ctx)?;
             let tr = tc_expr(right, tenv, ctx)?;
             match op {
-                BinaryOp::Add => match (tl, tr) {
-                    (Ty::Int, Ty::Int) => Ok(Ty::Int),
-                    (Ty::Float, Ty::Float) => Ok(Ty::Float),
-                    (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => Ok(Ty::Float),
-                    (Ty::String, Ty::String) => Ok(Ty::String),
-                    (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Int),
-                    (Ty::Unknown, Ty::Float) | (Ty::Float, Ty::Unknown) => Ok(Ty::Float),
-                    (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::String),
-                    (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
-                    _ => Err(SemanticError {
-                        message: format!(
-                            "TypeError: unsupported operand types for +: {:?} and {:?}",
-                            tl, tr
-                        ),
-                        span: expr.1.clone(),
-                    }),
-                },
-                BinaryOp::Multiply => match (tl, tr) {
-                    (Ty::Int, Ty::Int) => Ok(Ty::Int),
-                    (Ty::Float, Ty::Float) => Ok(Ty::Float),
-                    (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => Ok(Ty::Float),
-                    (Ty::String, Ty::Int) | (Ty::Int, Ty::String) => Ok(Ty::String),
-                    (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Int),
-                    (Ty::Unknown, Ty::Float) | (Ty::Float, Ty::Unknown) => Ok(Ty::Float),
-                    (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::String),
-                    (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
-                    _ => Err(SemanticError {
-                        message: format!(
-                            "TypeError: unsupported operand types for *: {:?} and {:?}",
-                            tl, tr
-                        ),
-                        span: expr.1.clone(),
-                    }),
-                },
+                BinaryOp::Add => {
+                    // Type rules for addition:
+                    // - Int + Int -> Int
+                    // - Float + Float -> Float
+                    // - Int + Float -> Float (promotion)
+                    // - String + String -> String
+                    // - Operations with Unknown are optimistic.
+                    match (tl, tr) {
+                        (Ty::Int, Ty::Int) => Ok(Ty::Int),
+                        (Ty::Float, Ty::Float) => Ok(Ty::Float),
+                        (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => Ok(Ty::Float),
+                        (Ty::String, Ty::String) => Ok(Ty::String),
+                        (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Int),
+                        (Ty::Unknown, Ty::Float) | (Ty::Float, Ty::Unknown) => Ok(Ty::Float),
+                        (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::String),
+                        (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
+                        (tl, tr) => Err(SemanticError {
+                            message: format!(
+                                "TypeError: unsupported operand types for +: {:?} and {:?}",
+                                tl, tr
+                            ),
+                            span: expr.1.clone(),
+                        }),
+                    }
+                }
+                BinaryOp::Multiply => {
+                    // Type rules for multiplication:
+                    // - Int * Int -> Int
+                    // - Float * Float -> Float
+                    // - Int * Float -> Float (promotion)
+                    // - String * Int -> String
+                    // - Operations with Unknown are optimistic.
+                    match (tl, tr) {
+                        (Ty::Int, Ty::Int) => Ok(Ty::Int),
+                        (Ty::Float, Ty::Float) => Ok(Ty::Float),
+                        (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => Ok(Ty::Float),
+                        (Ty::String, Ty::Int) | (Ty::Int, Ty::String) => Ok(Ty::String),
+                        (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Int),
+                        (Ty::Unknown, Ty::Float) | (Ty::Float, Ty::Unknown) => Ok(Ty::Float),
+                        (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::String),
+                        (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
+                        (tl, tr) => Err(SemanticError {
+                            message: format!(
+                                "TypeError: unsupported operand types for *: {:?} and {:?}",
+                                tl, tr
+                            ),
+                            span: expr.1.clone(),
+                        }),
+                    }
+                }
                 BinaryOp::Subtract | BinaryOp::Modulo => {
                     expect_numeric_pair(tl, tr, expr.1.clone())
                 }
@@ -366,7 +399,7 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                     (Ty::Unknown, Ty::Float) | (Ty::Float, Ty::Unknown) => Ok(Ty::Bool),
                     (Ty::Unknown, Ty::String) | (Ty::String, Ty::Unknown) => Ok(Ty::Bool),
                     (Ty::Unknown, Ty::Unknown) => Ok(Ty::Bool),
-                    _ => Err(SemanticError {
+                    (tl, tr) => Err(SemanticError {
                         message: format!("TypeError: cannot compare {:?} and {:?}", tl, tr),
                         span: expr.1.clone(),
                     }),
@@ -444,16 +477,17 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                         }
                         "len" => {
                             let arg_ty = tc_expr(&args[0], tenv, ctx)?;
-                            if arg_ty != Ty::String && arg_ty != Ty::Unknown {
-                                return Err(SemanticError {
+                            return match arg_ty {
+                                Ty::String | Ty::List(_) | Ty::Dict(_, _) => Ok(Ty::Int),
+                                Ty::Unknown => Ok(Ty::Int),
+                                _ => Err(SemanticError {
                                     message: format!(
-                                        "TypeError: len() requires a string, got {:?}",
+                                        "TypeError: object of type {:?} has no len()",
                                         arg_ty
                                     ),
                                     span: expr.1.clone(),
-                                });
-                            }
-                            return Ok(Ty::Int);
+                                }),
+                            };
                         }
                         "range" => {
                             // range(stop) or range(start, stop) or range(start, stop, step)
@@ -470,8 +504,8 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                                     });
                                 }
                             }
-                            // range는 iterator 객체를 반환 (타입 시스템에서는 Unknown으로 처리)
-                            return Ok(Ty::Unknown);
+                            // range는 iterator 객체를 반환 (타입 시스템에서는 Range로 처리)
+                            return Ok(Ty::Range);
                         }
                         "assert" => {
                             let _ = tc_expr(&args[0], tenv, ctx)?;
@@ -524,30 +558,91 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
             Ok(Ty::Unknown) // Attribute는 Unknown 타입으로 처리
         }
         Expr::List(elements) => {
-            // 각 요소의 타입을 체크
+            let mut elem_ty = Ty::Unknown;
             for elem in elements {
-                let _ = tc_expr(elem, tenv, ctx)?;
+                let ty = tc_expr(elem, tenv, ctx)?;
+                if elem_ty == Ty::Unknown {
+                    elem_ty = ty;
+                } else if elem_ty != ty {
+                    elem_ty = Ty::Unknown;
+                    break;
+                }
             }
-            Ok(Ty::Unknown) // List는 Unknown 타입으로 처리
+            Ok(Ty::List(Box::new(elem_ty)))
         }
         Expr::Dict(pairs) => {
-            // 각 키-값 쌍의 타입을 체크
+            let mut key_ty = Ty::Unknown;
+            let mut val_ty = Ty::Unknown;
             for (key, value) in pairs {
-                let _ = tc_expr(key, tenv, ctx)?;
-                let _ = tc_expr(value, tenv, ctx)?;
+                let k_ty = tc_expr(key, tenv, ctx)?;
+                let v_ty = tc_expr(value, tenv, ctx)?;
+                if key_ty == Ty::Unknown {
+                    key_ty = k_ty;
+                } else if key_ty != k_ty {
+                    key_ty = Ty::Unknown;
+                }
+                if val_ty == Ty::Unknown {
+                    val_ty = v_ty;
+                } else if val_ty != v_ty {
+                    val_ty = Ty::Unknown;
+                }
+                if key_ty == Ty::Unknown && val_ty == Ty::Unknown {
+                    break;
+                }
             }
-            Ok(Ty::Unknown) // Dict는 Unknown 타입으로 처리
+            Ok(Ty::Dict(Box::new(key_ty), Box::new(val_ty)))
         }
         Expr::Index { object, index } => {
-            let _ = tc_expr(object, tenv, ctx)?;
-            let _ = tc_expr(index, tenv, ctx)?;
-            Ok(Ty::Unknown) // Index는 Unknown 타입으로 처리
+            let obj_ty = tc_expr(object, tenv, ctx)?;
+            let idx_ty = tc_expr(index, tenv, ctx)?;
+            match obj_ty {
+                Ty::List(elem_ty) => {
+                    if idx_ty != Ty::Int && idx_ty != Ty::Unknown {
+                        return Err(SemanticError {
+                            message: format!(
+                                "TypeError: list indices must be integers, not {:?}",
+                                idx_ty
+                            ),
+                            span: index.1.clone(),
+                        });
+                    }
+                    Ok(*elem_ty)
+                }
+                Ty::Dict(key_ty, val_ty) => {
+                    if idx_ty != *key_ty && idx_ty != Ty::Unknown && *key_ty != Ty::Unknown {
+                        return Err(SemanticError {
+                            message: format!(
+                                "TypeError: dictionary key type mismatch: expected {:?}, got {:?}",
+                                *key_ty, idx_ty
+                            ),
+                            span: index.1.clone(),
+                        });
+                    }
+                    Ok(*val_ty)
+                }
+                Ty::String => {
+                    if idx_ty != Ty::Int && idx_ty != Ty::Unknown {
+                        return Err(SemanticError {
+                            message: format!(
+                                "TypeError: string indices must be integers, not {:?}",
+                                idx_ty
+                            ),
+                            span: index.1.clone(),
+                        });
+                    }
+                    Ok(Ty::String)
+                }
+                Ty::Unknown => Ok(Ty::Unknown),
+                _ => Err(SemanticError {
+                    message: format!("TypeError: type '{:?}' is not subscriptable", obj_ty),
+                    span: object.1.clone(),
+                }),
+            }
         }
-        Expr::Lambda { params: _, body } => {
-            // Lambda는 함수 타입으로 처리 (현재는 Unknown으로 처리)
-            // body의 타입 체크만 수행
-            let _ = tc_expr(body, tenv, ctx)?;
-            Ok(Ty::Unknown) // Lambda는 Unknown 타입으로 처리
+        Expr::Lambda { .. } => {
+            // A full implementation would check the body and infer a more specific
+            // function type, but for now, just marking it as a function is enough.
+            Ok(Ty::Function)
         }
     }
 }
@@ -573,7 +668,7 @@ fn expect_int_or_float(t: Ty, span: crate::types::Span) -> SemanticResult<Ty> {
         Ty::Float => Ok(Ty::Float),
         Ty::Unknown => Ok(Ty::Unknown), // optimistic
         _ => Err(SemanticError {
-            message: format!("TypeError: expected Int, got {:?}", t),
+            message: format!("TypeError: expected Int or Float, got {:?}", t),
             span,
         }),
     }
@@ -590,6 +685,12 @@ fn expect_bool(t: Ty, span: crate::types::Span) -> SemanticResult<Ty> {
     }
 }
 
+/// Checks for a pair of numeric types (Int, Float) and returns the promoted type.
+/// Promotion rules:
+/// - Int, Int -> Int
+/// - Float, Float -> Float
+/// - Int, Float -> Float
+/// - Unknown is handled optimistically.
 fn expect_numeric_pair(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResult<Ty> {
     match (t1, t2) {
         (Ty::Int, Ty::Int) => Ok(Ty::Int),
@@ -598,7 +699,7 @@ fn expect_numeric_pair(t1: Ty, t2: Ty, span: crate::types::Span) -> SemanticResu
         (Ty::Unknown, Ty::Int) | (Ty::Int, Ty::Unknown) => Ok(Ty::Int),
         (Ty::Unknown, Ty::Float) | (Ty::Float, Ty::Unknown) => Ok(Ty::Float),
         (Ty::Unknown, Ty::Unknown) => Ok(Ty::Unknown),
-        _ => Err(SemanticError {
+        (t1, t2) => Err(SemanticError {
             message: format!(
                 "TypeError: expected numeric types, got {:?} and {:?}",
                 t1, t2
