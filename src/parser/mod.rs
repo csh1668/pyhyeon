@@ -770,6 +770,30 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_parse_comparison_chain() {
+        let result = parse_expr("1 < x < 10");
+        assert!(result.is_ok());
+        let expr = result.unwrap();
+        // Should be parsed as (1 < x) and (x < 10)
+        if let Expr::Binary { op: BinaryOp::And, left, right } = expr.0 {
+            if let Expr::Binary { op: BinaryOp::Less, left: l1, right: r1 } = left.0 {
+                assert!(matches!(l1.0, Expr::Literal(Literal::Int(1))));
+                assert!(matches!(r1.0, Expr::Variable(_)));
+            } else {
+                panic!("Expected less expression on left");
+            }
+            if let Expr::Binary { op: BinaryOp::Less, left: l2, right: r2 } = right.0 {
+                assert!(matches!(l2.0, Expr::Variable(_)));
+                assert!(matches!(r2.0, Expr::Literal(Literal::Int(10))));
+            } else {
+                panic!("Expected less expression on right");
+            }
+        } else {
+            panic!("Expected and expression at top level");
+        }
+    }
+
     // ========== 문장 파싱 테스트 ==========
 
     #[test]
