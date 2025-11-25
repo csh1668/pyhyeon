@@ -21,6 +21,7 @@ pub fn call(args: Vec<Value>) -> VmResult<Value> {
             match &obj.data {
                 ObjectData::String(s) => Ok(Value::Int(s.chars().count() as i64)),
                 ObjectData::List { items } => Ok(Value::Int(items.borrow().len() as i64)),
+                ObjectData::Tuple { items } => Ok(Value::Int(items.len() as i64)),
                 ObjectData::Dict { map } => Ok(Value::Int(map.borrow().len() as i64)),
                 _ => Err(err(
                     VmErrorKind::TypeError("len"),

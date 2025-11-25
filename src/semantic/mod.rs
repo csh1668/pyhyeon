@@ -82,23 +82,8 @@ fn analyze_stmt_module(
         }
         Stmt::Assign { target, value } => {
             analyze_expr_module(value, scopes, ctx)?;
-            // target이 Variable이면 정의, Attribute나 Index이면 object만 검증
-            match &target.0 {
-                Expr::Variable(name) => {
-                    if !scopes.is_defined(name) {
-                        scopes.define(name.clone());
-                    }
-                }
-                Expr::Attribute { .. } | Expr::Index { .. } => {
-                    analyze_expr_module(target, scopes, ctx)?;
-                }
-                _ => {
-                    return Err(SemanticError {
-                        message: "Invalid assignment target".to_string(),
-                        span: target.1.clone(),
-                    });
-                }
-            }
+            // 튜플 언패킹 지원: target이 Tuple인 경우 각 요소 검증
+            validate_and_analyze_assign_target(target, scopes, ctx, false)?;
             Ok(())
         }
         Stmt::If {
@@ -189,6 +174,76 @@ fn analyze_stmt_module(
     }
 }
 
+/// 할당 대상(target)을 검증하고 분석합니다.
+/// 튜플 언패킹을 재귀적으로 지원합니다.
+fn validate_and_analyze_assign_target(
+    target: &ExprS,
+    scopes: &mut scope::ScopeStack,
+    ctx: &ProgramContext,
+    in_function: bool,
+) -> SemanticResult<()> {
+    match &target.0 {
+        Expr::Variable(name) => {
+            if !scopes.is_defined(name) {
+                scopes.define(name.clone());
+            }
+            Ok(())
+        }
+        Expr::Attribute { .. } | Expr::Index { .. } => {
+            analyze_expr_module(target, scopes, ctx)
+        }
+        Expr::Tuple(elements) => {
+            // 튜플 언패킹: 각 요소가 유효한 할당 대상인지 재귀적으로 검증
+            for elem in elements {
+                validate_and_analyze_assign_target(elem, scopes, ctx, in_function)?;
+            }
+            Ok(())
+        }
+        Expr::Literal(_) | Expr::Call { .. } | Expr::Binary { .. } | Expr::Unary { .. } | Expr::Lambda { .. } | Expr::List(_) | Expr::Dict(_) => {
+            Err(SemanticError {
+                message: "Invalid assignment target: cannot assign to literal, call, or expression".to_string(),
+                span: target.1.clone(),
+            })
+        }
+    }
+}
+
+/// 함수 내부에서 할당 대상을 검증하고 분석합니다.
+/// 튜플 언패킹을 재귀적으로 지원합니다.
+fn validate_and_analyze_assign_target_function(
+    target: &ExprS,
+    scopes: &mut scope::ScopeStack,
+    ctx: &ProgramContext,
+    locals: &HashSet<String>,
+    assigned: &mut HashSet<String>,
+) -> SemanticResult<()> {
+    match &target.0 {
+        Expr::Variable(name) => {
+            assigned.insert(name.clone());
+            if !scopes.is_defined(name) {
+                scopes.define(name.clone());
+            }
+            Ok(())
+        }
+        Expr::Attribute { .. } | Expr::Index { .. } => {
+            analyze_expr_function(target, scopes, ctx, locals, assigned)
+        }
+        Expr::Tuple(elements) => {
+            // 튜플 언패킹: 각 요소가 유효한 할당 대상인지 재귀적으로 검증
+            for elem in elements {
+                validate_and_analyze_assign_target_function(elem, scopes, ctx, locals, assigned)?;
+            }
+            Ok(())
+        }
+        Expr::Literal(_) | Expr::Call { .. } | Expr::Binary { .. } | Expr::Unary { .. } | Expr::Lambda { .. } | Expr::List(_) | Expr::Dict(_) => {
+            Err(SemanticError {
+                message: "Invalid assignment target: cannot assign to literal, call, or expression".to_string(),
+                span: target.1.clone(),
+            })
+        }
+    }
+}
+
 fn analyze_expr_module(
     expr: &ExprS,
     scopes: &mut scope::ScopeStack,
@@ -242,6 +297,12 @@ fn analyze_expr_module(
             for (key, value) in pairs {
                 analyze_expr_module(key, scopes, ctx)?;
                 analyze_expr_module(value, scopes, ctx)?;
+            }
+            Ok(())
+        }
+        Expr::Tuple(elements) => {
+            for elem in elements {
+                analyze_expr_module(elem, scopes, ctx)?;
             }
             Ok(())
         }
@@ -307,14 +368,33 @@ fn analyze_function(
     Ok(())
 }
 
+/// 할당 대상에서 로컬 변수를 재귀적으로 수집합니다.
+fn collect_locals_from_target(target: &Expr, locals: &mut HashSet<String>) {
+    match target {
+        Expr::Variable(name) => {
+            locals.insert(name.clone());
+        }
+        Expr::Tuple(elements) => {
+            // 튜플 언패킹: 각 요소에서 재귀적으로 수집
+            for elem in elements {
+                collect_locals_from_target(&elem.0, locals);
+            }
+        }
+        Expr::Attribute { .. } | Expr::Index { .. } => {
+            // 속성/인덱스 할당은 로컬 변수를 생성하지 않음
+        }
+        _ => {
+            // 다른 표현식은 로컬 변수를 생성하지 않음
+        }
+    }
+}
+
 fn collect_locals(body: &Vec<StmtS>, locals: &mut HashSet<String>) {
     for s in body {
         match &s.0 {
             Stmt::Assign { target, .. } => {
-                // locals는 Variable만 추적
-                if let Expr::Variable(name) = &target.0 {
-                    locals.insert(name.clone());
-                }
+                // 튜플 언패킹 지원: 재귀적으로 변수 수집
+                collect_locals_from_target(&target.0, locals);
             }
             Stmt::Def { name, .. } => {
                 locals.insert(name.clone());
@@ -383,6 +463,11 @@ fn collect_free_vars(expr: &ExprS, params: &Vec<String>, free_vars: &mut HashSet
                 collect_free_vars(value, params, free_vars);
             }
         }
+        Expr::Tuple(elements) => {
+            for elem in elements {
+                collect_free_vars(elem, params, free_vars);
+            }
+        }
         Expr::Index { object, index } => {
             collect_free_vars(object, params, free_vars);
             collect_free_vars(index, params, free_vars);
@@ -417,24 +502,8 @@ fn analyze_stmt_function(
         }
         Stmt::Assign { target, value } => {
             analyze_expr_function(value, scopes, ctx, locals, assigned)?;
-            // target이 Variable이면 정의, Attribute나 Index이면 object만 검증
-            match &target.0 {
-                Expr::Variable(name) => {
-                    assigned.insert(name.clone());
-                    if !scopes.is_defined(name) {
-                        scopes.define(name.clone());
-                    }
-                }
-                Expr::Attribute { .. } | Expr::Index { .. } => {
-                    analyze_expr_function(target, scopes, ctx, locals, assigned)?;
-                }
-                _ => {
-                    return Err(SemanticError {
-                        message: "Invalid assignment target".to_string(),
-                        span: target.1.clone(),
-                    });
-                }
-            }
+            // 튜플 언패킹 지원: target이 Tuple인 경우 각 요소 검증
+            validate_and_analyze_assign_target_function(target, scopes, ctx, locals, assigned)?;
             Ok(())
         }
         Stmt::Def { name, params, body } => {
@@ -587,6 +656,12 @@ fn analyze_expr_function(
             for (key, value) in pairs {
                 analyze_expr_function(key, scopes, ctx, locals, assigned)?;
                 analyze_expr_function(value, scopes, ctx, locals, assigned)?;
+            }
+            Ok(())
+        }
+        Expr::Tuple(elements) => {
+            for elem in elements {
+                analyze_expr_function(elem, scopes, ctx, locals, assigned)?;
             }
             Ok(())
         }
@@ -891,5 +966,284 @@ mod tests {
 
         let result = analyze(&program);
         assert!(result.is_ok());
+    }
+
+    // ========== 타입 시스템 개선 테스트 ==========
+
+    #[test]
+    fn test_analyze_tuple_expression() {
+        // 튜플 표현식 분석
+        let program = vec![make_stmt(Stmt::Assign {
+            target: make_expr(Expr::Variable("t".to_string())),
+            value: make_expr(Expr::Tuple(vec![
+                make_expr(Expr::Literal(Literal::Int(1))),
+                make_expr(Expr::Literal(Literal::Int(2))),
+                make_expr(Expr::Literal(Literal::Int(3))),
+            ])),
+        })];
+
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_for_with_range() {
+        // range()를 사용한 for 루프 - 루프 변수는 Int로 추론
+        let program = vec![make_stmt(Stmt::For {
+            var: "i".to_string(),
+            iterable: make_expr(Expr::Call {
+                func_name: Box::new(make_expr(Expr::Variable("range".to_string()))),
+                args: vec![make_expr(Expr::Literal(Literal::Int(10)))],
+            }),
+            body: vec![make_stmt(Stmt::Expr(make_expr(Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(make_expr(Expr::Variable("i".to_string()))),
+                right: Box::new(make_expr(Expr::Literal(Literal::Int(1)))),
+            })))],
+        })];
+
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_for_loop_type_mismatch() {
+        // range() 루프에서 Int 변수를 String과 연산하면 에러
+        let program = vec![make_stmt(Stmt::For {
+            var: "i".to_string(),
+            iterable: make_expr(Expr::Call {
+                func_name: Box::new(make_expr(Expr::Variable("range".to_string()))),
+                args: vec![make_expr(Expr::Literal(Literal::Int(10)))],
+            }),
+            body: vec![make_stmt(Stmt::Expr(make_expr(Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(make_expr(Expr::Variable("i".to_string()))),
+                right: Box::new(make_expr(Expr::Literal(Literal::String("hello".to_string())))),
+            })))],
+        })];
+
+        let result = analyze(&program);
+        assert!(result.is_err(), "Should fail: Int + String type error");
+    }
+
+    #[test]
+    fn test_analyze_for_with_list() {
+        // 리스트를 사용한 for 루프
+        let program = vec![make_stmt(Stmt::For {
+            var: "x".to_string(),
+            iterable: make_expr(Expr::List(vec![
+                make_expr(Expr::Literal(Literal::Int(1))),
+                make_expr(Expr::Literal(Literal::Int(2))),
+                make_expr(Expr::Literal(Literal::Int(3))),
+            ])),
+            body: vec![make_stmt(Stmt::Expr(make_expr(Expr::Binary {
+                op: BinaryOp::Multiply,
+                left: Box::new(make_expr(Expr::Variable("x".to_string()))),
+                right: Box::new(make_expr(Expr::Literal(Literal::Int(2)))),
+            })))],
+        })];
+
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_lambda_captures() {
+        // Lambda가 외부 변수를 캡처
+        let program = vec![
+            make_stmt(Stmt::Assign {
+                target: make_expr(Expr::Variable("x".to_string())),
+                value: make_expr(Expr::Literal(Literal::Int(10))),
+            }),
+            make_stmt(Stmt::Assign {
+                target: make_expr(Expr::Variable("f".to_string())),
+                value: make_expr(Expr::Lambda {
+                    params: vec!["y".to_string()],
+                    body: Box::new(make_expr(Expr::Binary {
+                        op: BinaryOp::Add,
+                        left: Box::new(make_expr(Expr::Variable("x".to_string()))),
+                        right: Box::new(make_expr(Expr::Variable("y".to_string()))),
+                    })),
+                }),
+            }),
+        ];
+
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_lambda_undefined_capture() {
+        // Lambda가 정의되지 않은 변수를 캡처하면 에러
+        let program = vec![make_stmt(Stmt::Assign {
+            target: make_expr(Expr::Variable("f".to_string())),
+            value: make_expr(Expr::Lambda {
+                params: vec!["y".to_string()],
+                body: Box::new(make_expr(Expr::Binary {
+                    op: BinaryOp::Add,
+                    left: Box::new(make_expr(Expr::Variable("undefined_var".to_string()))),
+                    right: Box::new(make_expr(Expr::Variable("y".to_string()))),
+                })),
+            }),
+        })];
+
+        let result = analyze(&program);
+        assert!(result.is_err(), "Should fail: undefined variable captured by lambda");
+    }
+
+    #[test]
+    fn test_analyze_map_function() {
+        // map() 빌트인 함수 호출
+        let program = vec![
+            make_stmt(Stmt::Assign {
+                target: make_expr(Expr::Variable("f".to_string())),
+                value: make_expr(Expr::Lambda {
+                    params: vec!["x".to_string()],
+                    body: Box::new(make_expr(Expr::Binary {
+                        op: BinaryOp::Multiply,
+                        left: Box::new(make_expr(Expr::Variable("x".to_string()))),
+                        right: Box::new(make_expr(Expr::Literal(Literal::Int(2)))),
+                    })),
+                }),
+            }),
+            make_stmt(Stmt::Assign {
+                target: make_expr(Expr::Variable("result".to_string())),
+                value: make_expr(Expr::Call {
+                    func_name: Box::new(make_expr(Expr::Variable("map".to_string()))),
+                    args: vec![
+                        make_expr(Expr::Variable("f".to_string())),
+                        make_expr(Expr::Call {
+                            func_name: Box::new(make_expr(Expr::Variable("range".to_string()))),
+                            args: vec![make_expr(Expr::Literal(Literal::Int(5)))],
+                        }),
+                    ],
+                }),
+            }),
+        ];
+
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_filter_function() {
+        // filter() 빌트인 함수 호출
+        let program = vec![
+            make_stmt(Stmt::Assign {
+                target: make_expr(Expr::Variable("is_even".to_string())),
+                value: make_expr(Expr::Lambda {
+                    params: vec!["x".to_string()],
+                    body: Box::new(make_expr(Expr::Binary {
+                        op: BinaryOp::Equal,
+                        left: Box::new(make_expr(Expr::Binary {
+                            op: BinaryOp::Modulo,
+                            left: Box::new(make_expr(Expr::Variable("x".to_string()))),
+                            right: Box::new(make_expr(Expr::Literal(Literal::Int(2)))),
+                        })),
+                        right: Box::new(make_expr(Expr::Literal(Literal::Int(0)))),
+                    })),
+                }),
+            }),
+            make_stmt(Stmt::Assign {
+                target: make_expr(Expr::Variable("evens".to_string())),
+                value: make_expr(Expr::Call {
+                    func_name: Box::new(make_expr(Expr::Variable("filter".to_string()))),
+                    args: vec![
+                        make_expr(Expr::Variable("is_even".to_string())),
+                        make_expr(Expr::Call {
+                            func_name: Box::new(make_expr(Expr::Variable("range".to_string()))),
+                            args: vec![make_expr(Expr::Literal(Literal::Int(10)))],
+                        }),
+                    ],
+                }),
+            }),
+        ];
+
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    // ========== 튜플 언패킹 테스트 ==========
+
+    #[test]
+    fn test_analyze_unpack_assignment() {
+        // 기본 언패킹
+        let program = vec![make_stmt(Stmt::Assign {
+            target: make_expr(Expr::Tuple(vec![
+                make_expr(Expr::Variable("a".to_string())),
+                make_expr(Expr::Variable("b".to_string())),
+                make_expr(Expr::Variable("c".to_string())),
+            ])),
+            value: make_expr(Expr::Tuple(vec![
+                make_expr(Expr::Literal(Literal::Int(1))),
+                make_expr(Expr::Literal(Literal::Int(2))),
+                make_expr(Expr::Literal(Literal::Int(3))),
+            ])),
+        })];
+
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_unpack_from_list() {
+        // 리스트에서 언패킹
+        let program = vec![make_stmt(Stmt::Assign {
+            target: make_expr(Expr::Tuple(vec![
+                make_expr(Expr::Variable("x".to_string())),
+                make_expr(Expr::Variable("y".to_string())),
+                make_expr(Expr::Variable("z".to_string())),
+            ])),
+            value: make_expr(Expr::List(vec![
+                make_expr(Expr::Literal(Literal::Int(1))),
+                make_expr(Expr::Literal(Literal::Int(2))),
+                make_expr(Expr::Literal(Literal::Int(3))),
+            ])),
+        })];
+
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_nested_unpack() {
+        // 중첩 언패킹
+        let program = vec![make_stmt(Stmt::Assign {
+            target: make_expr(Expr::Tuple(vec![
+                make_expr(Expr::Variable("a".to_string())),
+                make_expr(Expr::Tuple(vec![
+                    make_expr(Expr::Variable("b".to_string())),
+                    make_expr(Expr::Variable("c".to_string())),
+                ])),
+            ])),
+            value: make_expr(Expr::Tuple(vec![
+                make_expr(Expr::Literal(Literal::Int(1))),
+                make_expr(Expr::Tuple(vec![
+                    make_expr(Expr::Literal(Literal::Int(2))),
+                    make_expr(Expr::Literal(Literal::Int(3))),
+                ])),
+            ])),
+        })];
+
+        let result = analyze(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyze_invalid_unpack_target() {
+        // 리터럴에 할당 불가
+        let program = vec![make_stmt(Stmt::Assign {
+            target: make_expr(Expr::Tuple(vec![
+                make_expr(Expr::Literal(Literal::Int(1))),
+                make_expr(Expr::Literal(Literal::Int(2))),
+            ])),
+            value: make_expr(Expr::Tuple(vec![
+                make_expr(Expr::Literal(Literal::Int(10))),
+                make_expr(Expr::Literal(Literal::Int(20))),
+            ])),
+        })];
+
+        let result = analyze(&program);
+        assert!(result.is_err(), "Should fail: cannot assign to literal");
     }
 }

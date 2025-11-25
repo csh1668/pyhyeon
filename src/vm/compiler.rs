@@ -123,38 +123,8 @@ impl Compiler {
                 // Pass is a no-op, emit nothing
             }
             Stmt::Assign { target, value } => {
-                match &target.0 {
-                    Expr::Variable(name) => {
-                        self.emit_expr(value, fun, locals);
-                        if let Some(locals) = locals {
-                            if let Some(ix) = locals.get(name) {
-                                fun.code.push(I::StoreLocal(*ix));
-                            } else {
-                                let gid = self.sym_id(name);
-                                fun.code.push(I::StoreGlobal(gid));
-                            }
-                        } else {
-                            let gid = self.sym_id(name);
-                            fun.code.push(I::StoreGlobal(gid));
-                        }
-                    }
-                    Expr::Attribute { object, attr } => {
-                        self.emit_expr(object, fun, locals);
-                        self.emit_expr(value, fun, locals);
-                        let attr_sym = self.intern(attr);
-                        fun.code.push(I::StoreAttr(attr_sym));
-                    }
-                    Expr::Index { object, index } => {
-                        // obj[idx] = value
-                        self.emit_expr(object, fun, locals);
-                        self.emit_expr(index, fun, locals);
-                        self.emit_expr(value, fun, locals);
-                        fun.code.push(I::StoreIndex);
-                    }
-                    _ => {
-                        // Semantic analysis should have caught this
-                        panic!("Invalid assignment target");
-                    }
+                if let Err(e) = self.emit_assign(target, value, fun, locals) {
+                    panic!("{}", e);
                 }
             }
             Stmt::Expr(e) => {
@@ -603,6 +573,14 @@ impl Compiler {
                 // BuildDict instruction
                 fun.code.push(I::BuildDict(pairs.len() as u16));
             }
+            Expr::Tuple(elements) => {
+                // 각 요소를 스택에 push
+                for elem in elements {
+                    self.emit_expr(elem, fun, locals);
+                }
+                // BuildTuple instruction
+                fun.code.push(I::BuildTuple(elements.len() as u16));
+            }
             Expr::Index { object, index } => {
                 // object와 index를 스택에 push
                 self.emit_expr(object, fun, locals);
@@ -687,6 +665,112 @@ impl Compiler {
         self.intern(s)
     }
 
+    /// 할당 대상을 컴파일합니다 (값은 이미 스택에 있음).
+    /// 튜플 언패킹을 재귀적으로 지원합니다.
+    fn emit_assign_target(
+        &mut self,
+        target: &ExprS,
+        fun: &mut FunctionCode,
+        locals: Option<&HashMap<String, u16>>,
+    ) -> Result<(), String> {
+        match &target.0 {
+            Expr::Variable(name) => {
+                if let Some(locals) = locals {
+                    if let Some(ix) = locals.get(name) {
+                        fun.code.push(I::StoreLocal(*ix));
+                    } else {
+                        let gid = self.sym_id(name);
+                        fun.code.push(I::StoreGlobal(gid));
+                    }
+                } else {
+                    let gid = self.sym_id(name);
+                    fun.code.push(I::StoreGlobal(gid));
+                }
+                Ok(())
+            }
+            Expr::Attribute { object, attr } => {
+                // object는 이미 스택에 있어야 함 (이전에 평가됨)
+                // 하지만 여기서는 값만 스택에 있으므로, object를 먼저 평가해야 함
+                // 이 경우는 일반 assign에서 처리됨
+                Err("Attribute assignment in unpacking not yet supported".to_string())
+            }
+            Expr::Index { object, index } => {
+                // object와 index는 이미 스택에 있어야 함
+                // 하지만 여기서는 값만 스택에 있으므로, 이 경우는 일반 assign에서 처리됨
+                Err("Index assignment in unpacking not yet supported".to_string())
+            }
+            Expr::Tuple(elements) => {
+                // 중첩 언패킹: (a, (b, c)) = ...
+                // 값은 이미 스택에 있음
+                for (i, target_elem) in elements.iter().enumerate().rev() {
+                    if i > 0 {
+                        fun.code.push(I::Dup);
+                    }
+                    fun.code.push(I::ConstI64(i as i64));
+                    fun.code.push(I::LoadIndex);
+                    self.emit_assign_target(target_elem, fun, locals)?;
+                }
+                Ok(())
+            }
+            _ => Err("Invalid assignment target".to_string()),
+        }
+    }
+
+    /// 할당 문을 컴파일합니다. 튜플 언패킹을 지원합니다.
+    fn emit_assign(
+        &mut self,
+        target: &ExprS,
+        value: &ExprS,
+        fun: &mut FunctionCode,
+        locals: Option<&HashMap<String, u16>>,
+    ) -> Result<(), String> {
+        match &target.0 {
+            Expr::Variable(name) => {
+                self.emit_expr(value, fun, locals);
+                self.emit_assign_target(target, fun, locals)?;
+                Ok(())
+            }
+            Expr::Attribute { object, attr } => {
+                self.emit_expr(object, fun, locals);
+                self.emit_expr(value, fun, locals);
+                let attr_sym = self.intern(attr);
+                fun.code.push(I::StoreAttr(attr_sym));
+                Ok(())
+            }
+            Expr::Index { object, index } => {
+                // obj[idx] = value
+                self.emit_expr(object, fun, locals);
+                self.emit_expr(index, fun, locals);
+                self.emit_expr(value, fun, locals);
+                fun.code.push(I::StoreIndex);
+                Ok(())
+            }
+            Expr::Tuple(elements) => {
+                // 튜플 언패킹: a, b, c = value
+                // 1. RHS 평가 (튜플/리스트를 스택에 push)
+                self.emit_expr(value, fun, locals);
+                
+                // 2. 각 요소를 역순으로 처리 (스택 순서 맞추기 위해)
+                for (i, target_elem) in elements.iter().enumerate().rev() {
+                    // 마지막 요소가 아니면 튜플/리스트 복사
+                    if i > 0 {
+                        fun.code.push(I::Dup);
+                    }
+                    // 인덱스 push
+                    fun.code.push(I::ConstI64(i as i64));
+                    // 요소 가져오기
+                    fun.code.push(I::LoadIndex);
+                    // target에 할당 (재귀적으로 처리하여 중첩 언패킹 지원)
+                    self.emit_assign_target(target_elem, fun, locals)?;
+                }
+                Ok(())
+            }
+            _ => {
+                Err("Invalid assignment target".to_string())
+            }
+        }
+    }
+
     fn resolve_function_id(&mut self, name: &str) -> usize {
         // linear scan; in v0.1 functions are compiled before use in same module body order
         if name == "__main__" {
@@ -713,6 +797,23 @@ impl Compiler {
             code: vec![I::Return],
         });
         id
+    }
+}
+
+/// 할당 대상에서 로컬 변수를 재귀적으로 수집합니다.
+fn collect_locals_from_target(target: &Expr, seen: &mut HashSet<String>) {
+    match target {
+        Expr::Variable(name) => {
+            seen.insert(name.clone());
+        }
+        Expr::Tuple(elements) => {
+            for elem in elements {
+                collect_locals_from_target(&elem.0, seen);
+            }
+        }
+        _ => {
+            // 다른 표현식은 로컬 변수를 생성하지 않음
+        }
     }
 }
 
@@ -805,6 +906,11 @@ fn collect_referenced_vars(expr: &ExprS, vars: &mut HashSet<String>) {
             for (key, value) in pairs {
                 collect_referenced_vars(key, vars);
                 collect_referenced_vars(value, vars);
+            }
+        }
+        Expr::Tuple(elements) => {
+            for elem in elements {
+                collect_referenced_vars(elem, vars);
             }
         }
         Expr::Index { object, index } => {

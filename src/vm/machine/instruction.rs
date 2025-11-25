@@ -35,6 +35,7 @@ impl Vm {
 
             // ===== 스택 연산 =====
             I::Pop => self.handle_pop(),
+            I::Dup => self.handle_dup(),
 
             // ===== 로컬/글로벌 변수 =====
             I::LoadLocal(ix) => self.handle_load_local(*ix),
@@ -79,6 +80,7 @@ impl Vm {
 
             // ===== 컬렉션 =====
             I::BuildList(count) => self.handle_build_list(*count),
+            I::BuildTuple(count) => self.handle_build_tuple(*count),
             I::BuildDict(count) => self.handle_build_dict(*count),
             I::LoadIndex => self.handle_load_index(),
             I::StoreIndex => self.handle_store_index(),
@@ -130,6 +132,13 @@ impl Vm {
     }
 
     // ==================== 스택 연산 핸들러 ====================
+
+    fn handle_dup(&mut self) -> VmResult<ExecutionFlow> {
+        let top = self.pop()?;
+        self.push(top.clone())?;
+        self.push(top)?;
+        Ok(ExecutionFlow::Continue)
+    }
 
     fn handle_pop(&mut self) -> VmResult<ExecutionFlow> {
         self.pop()?;
@@ -1432,6 +1441,13 @@ impl Vm {
                                     "dict() constructor not yet implemented".to_string(),
                                 ));
                             }
+                            BuiltinClassType::Tuple => {
+                                // TODO: tuple() 생성자는 나중에 구현
+                                return Err(err(
+                                    VmErrorKind::TypeError("tuple constructor"),
+                                    "tuple() constructor not yet implemented".to_string(),
+                                ));
+                            }
                             BuiltinClassType::MapIter | BuiltinClassType::FilterIter => {
                                 // map/filter는 직접 호출할 수 없음 (builtin 함수로만 생성 가능)
                                 return Err(err(
@@ -1589,6 +1605,26 @@ impl Vm {
         Ok(ExecutionFlow::Continue)
     }
 
+    fn handle_build_tuple(&mut self, count: u16) -> VmResult<ExecutionFlow> {
+        let mut items = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            items.push(self.pop()?);
+        }
+        items.reverse(); // 스택에서 꺼낸 순서를 역순으로
+
+        use crate::builtins::TYPE_TUPLE;
+        use crate::vm::value::{Object, ObjectData};
+        use std::rc::Rc;
+
+        let tuple_obj = Value::Object(Rc::new(Object::new(
+            TYPE_TUPLE,
+            ObjectData::Tuple { items },
+        )));
+
+        self.push(tuple_obj)?;
+        Ok(ExecutionFlow::Continue)
+    }
+
     fn handle_build_dict(&mut self, pair_count: u16) -> VmResult<ExecutionFlow> {
         use crate::builtins::TYPE_DICT;
         use crate::vm::value::{DictKey, Object, ObjectData};
@@ -1675,6 +1711,38 @@ impl Vm {
                         }
 
                         let value = items_ref[actual_idx].clone();
+                        self.push(value)?;
+                    }
+                    ObjectData::Tuple { items } => {
+                        // 인덱스를 정수로 변환
+                        let idx = match index {
+                            Value::Int(i) => i,
+                            _ => {
+                                return Err(err(
+                                    VmErrorKind::TypeError("tuple index"),
+                                    "Tuple indices must be integers".to_string(),
+                                ));
+                            }
+                        };
+
+                        let len = items.len() as i64;
+
+                        // 음수 인덱스 지원
+                        let actual_idx = if idx < 0 {
+                            (len + idx) as usize
+                        } else {
+                            idx as usize
+                        };
+
+                        // 범위 체크
+                        if actual_idx >= items.len() {
+                            return Err(err(
+                                VmErrorKind::TypeError("tuple index"),
+                                format!("Tuple index out of range: {}", idx),
+                            ));
+                        }
+
+                        let value = items[actual_idx].clone();
                         self.push(value)?;
                     }
                     ObjectData::Dict { map } => {

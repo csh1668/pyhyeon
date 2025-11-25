@@ -60,6 +60,7 @@ pub enum Expr {
     },
     List(Vec<ExprS>),
     Dict(Vec<(ExprS, ExprS)>),
+    Tuple(Vec<ExprS>),
     Index {
         object: Box<ExprS>,
         index: Box<ExprS>,

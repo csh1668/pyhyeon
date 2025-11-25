@@ -28,6 +28,7 @@ pub const TYPE_FLOAT: u16 = 7;
 pub const TYPE_FUNCTION: u16 = 8;
 pub const TYPE_MAP_ITER: u16 = 9;
 pub const TYPE_FILTER_ITER: u16 = 10;
+pub const TYPE_TUPLE: u16 = 11;
 
 // ========== 빌트인 클래스 타입 ==========
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -38,13 +39,14 @@ pub enum BuiltinClassType {
     List,
     /// `{"a": 1}` 타입
     Dict,
+    /// `(1, 2, 3)` 타입
+    Tuple,
     /// `map(function, iterable)` 타입
     MapIter,
     /// `filter(function, iterable)` 타입
     FilterIter,
     // 미래 확장:
     // Set,    // `{1, 2, 3}`
-    // Tuple,  // `(1, 2, 3)`
 }
 
 impl BuiltinClassType {
@@ -54,6 +56,7 @@ impl BuiltinClassType {
             Self::Range => "range",
             Self::List => "list",
             Self::Dict => "dict",
+            Self::Tuple => "tuple",
             Self::MapIter => "map_iter",
             Self::FilterIter => "filter_iter",
         }

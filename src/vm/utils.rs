@@ -6,7 +6,7 @@ use super::bytecode::Value;
 use super::type_def::TYPE_USER_START;
 use super::value::{BuiltinInstanceData, DictKey, Object, ObjectData};
 use super::{VmError, VmErrorKind, VmResult, err};
-use crate::builtins::{BuiltinClassType, TYPE_DICT, TYPE_FILTER_ITER, TYPE_LIST, TYPE_MAP_ITER, TYPE_RANGE, TYPE_STR};
+use crate::builtins::{BuiltinClassType, TYPE_DICT, TYPE_FILTER_ITER, TYPE_LIST, TYPE_MAP_ITER, TYPE_RANGE, TYPE_STR, TYPE_TUPLE};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -34,6 +34,14 @@ pub fn display_value(v: &Value) -> String {
                 let items_ref = items.borrow();
                 let contents: Vec<String> = items_ref.iter().map(display_value).collect();
                 format!("[{}]", contents.join(", "))
+            }
+            ObjectData::Tuple { items } => {
+                let contents: Vec<String> = items.iter().map(display_value).collect();
+                if contents.len() == 1 {
+                    format!("({},)", contents[0])
+                } else {
+                    format!("({})", contents.join(", "))
+                }
             }
             ObjectData::Dict { map } => {
                 use super::value::DictKey;
@@ -88,6 +96,7 @@ pub fn type_name(v: &Value) -> &'static str {
         Value::Object(obj) => match &obj.data {
             ObjectData::String(_) => "str",
             ObjectData::List { .. } => "list",
+            ObjectData::Tuple { .. } => "tuple",
             ObjectData::Dict { .. } => "dict",
             ObjectData::UserClass { .. } => "type",
             ObjectData::UserInstance { .. } => "instance",
@@ -193,6 +202,7 @@ pub fn make_builtin_class(class_type: BuiltinClassType) -> Value {
         BuiltinClassType::Range => TYPE_RANGE,
         BuiltinClassType::List => TYPE_LIST,
         BuiltinClassType::Dict => TYPE_DICT,
+        BuiltinClassType::Tuple => TYPE_TUPLE,
         BuiltinClassType::MapIter => TYPE_MAP_ITER,
         BuiltinClassType::FilterIter => TYPE_FILTER_ITER,
     };

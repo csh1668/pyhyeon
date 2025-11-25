@@ -78,6 +78,11 @@ pub enum ObjectData {
         items: RefCell<Vec<crate::vm::bytecode::Value>>,
     },
 
+    /// Tuple (immutable)
+    Tuple {
+        items: Vec<crate::vm::bytecode::Value>,
+    },
+
     /// Dict (mutable)
     Dict {
         map: RefCell<HashMap<DictKey, crate::vm::bytecode::Value>>,

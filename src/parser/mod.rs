@@ -19,6 +19,40 @@ enum PostfixOp {
     Index(ExprS, Span),
 }
 
+/// 괄호 없는 튜플 또는 단일 표현식을 파싱합니다.
+/// 
+/// - `1, 2, 3` → `Expr::Tuple([1, 2, 3])`
+/// - `1,` → `Expr::Tuple([1])`
+/// - `1` → `Expr::Literal(1)`
+/// 
+/// 주의: 이 파서는 최상위 레벨에서만 사용되어야 합니다 (assignment RHS, return 값 등).
+/// 내부 표현식에서는 기존 expr_parser를 사용합니다.
+pub fn tuple_or_expr_parser<'tokens, I>()
+-> impl Parser<'tokens, I, ExprS, extra::Err<RichTokenError<'tokens>>>
+where
+    I: ValueInput<'tokens, Token = Token, Span = SimpleSpan> + 'tokens,
+{
+    // expr_parser를 사용하되, 최상위 레벨에서 쉼표로 구분된 리스트를 허용
+    expr_parser()
+        .separated_by(just(Token::Comma))
+        .at_least(1)
+        .allow_trailing()
+        .collect::<Vec<ExprS>>()
+        .map_with(|exprs: Vec<ExprS>, e| {
+            let s: I::Span = e.span();
+            let span = s.into_range();
+            
+            if exprs.len() == 1 {
+                // 단일 표현식
+                exprs.into_iter().next().unwrap()
+            } else {
+                // 튜플
+                (Expr::Tuple(exprs), span)
+            }
+        })
+        .boxed()
+}
+
 pub fn expr_parser<'tokens, I>()
 -> impl Parser<'tokens, I, ExprS, extra::Err<RichTokenError<'tokens>>>
 where
@@ -51,6 +85,40 @@ where
             .labelled("dict literal")
             .boxed();
 
+        // Tuple literal: (expr,) or (expr, expr, ...) - must have comma to distinguish from grouping
+        // Empty tuple: ()
+        // Note: (expr) is grouping, (expr,) is tuple
+        // We need to detect trailing comma to distinguish them
+        let tuple_literal = just(Token::LParen)
+            .ignore_then(
+                expr.clone()
+                    .then(
+                        just(Token::Comma)
+                            .then(expr.clone().separated_by(just(Token::Comma)).allow_trailing().collect::<Vec<_>>())
+                            .map(|(_, rest)| rest)
+                            .or_not()
+                    )
+                    .map(|(first, rest_opt)| {
+                        match rest_opt {
+                            Some(rest) => {
+                                // Comma exists: tuple
+                                let mut elements = vec![first];
+                                elements.extend(rest);
+                                (elements, true) // true = is tuple
+                            }
+                            None => {
+                                // No comma: could be grouping or empty tuple
+                                (vec![first], false) // false = might be grouping
+                            }
+                        }
+                    })
+                    .or(just(Token::RParen).to((vec![], true))) // Empty tuple: ()
+            )
+            .then_ignore(just(Token::RParen))
+            .map(|(elements, is_tuple)| (elements, is_tuple))
+            .labelled("tuple or grouped expression")
+            .boxed();
+
         // Primary: literals, variables, parenthesized expressions
         let primary = choice((
             select! {
@@ -63,10 +131,23 @@ where
             .labelled("literal"),
             list_literal,
             dict_literal,
+            // Tuple or parenthesized expression
+            tuple_literal.map(|(elements, is_tuple)| {
+                if is_tuple {
+                    // Tuple: (expr,), (expr, expr, ...), or ()
+                    if elements.len() == 1 {
+                        // Single element tuple: (expr,)
+                        Expr::Tuple(elements)
+                    } else {
+                        // Multiple elements or empty: tuple
+                        Expr::Tuple(elements)
+                    }
+                } else {
+                    // Grouping: (expr)
+                    elements.into_iter().next().unwrap().0
+                }
+            }),
             ident.map(Expr::Variable),
-            expr.clone()
-                .delimited_by(just(Token::LParen), just(Token::RParen))
-                .map(|e: ExprS| e.0), // take inner expr node
         ))
         .map_with(|node: Expr, e| {
             let s: I::Span = e.span();
@@ -305,6 +386,8 @@ where
     I: ValueInput<'tokens, Token = Token, Span = SimpleSpan> + 'tokens,
 {
     let expr = expr_parser().boxed();
+    // 괄호 없는 튜플을 허용하는 표현식 파서 (RHS, return 값 등)
+    let tuple_or_expr = tuple_or_expr_parser().boxed();
 
     recursive(|stmt| {
         let ident = select! { Token::Identifier(s) => s }.labelled("identifier");
@@ -314,15 +397,18 @@ where
 
         // Simple statement kinds (no line ending consumption here)
         let return_stmt = just(Token::Return)
-            .ignore_then(expr.clone())
+            .ignore_then(tuple_or_expr.clone())
             .map(Stmt::Return)
             .labelled("return statement")
             .boxed();
 
-        let assign_stmt = expr
+        // Assignment: LHS도 튜플 패턴을 지원해야 함
+        // LHS: expr (Variable, Attribute, Index, 또는 Tuple)
+        // RHS: tuple_or_expr (괄호 없는 튜플 허용)
+        let assign_stmt = tuple_or_expr
             .clone()
             .then_ignore(just(Token::Equal))
-            .then(expr.clone())
+            .then(tuple_or_expr.clone())
             .map_with(|(target, value), e| {
                 let s: I::Span = e.span();
                 Stmt::Assign {
@@ -333,7 +419,7 @@ where
             .labelled("assignment")
             .boxed();
 
-        let expr_stmt = expr
+        let expr_stmt = tuple_or_expr
             .clone()
             .map(Stmt::Expr)
             .labelled("expression statement")
@@ -993,5 +1079,114 @@ if x > 0:
     fn test_parse_error_invalid_syntax() {
         let result = parse_program("x = = 42\n");
         assert!(result.is_err());
+    }
+
+    // ========== 괄호 없는 튜플 및 언패킹 테스트 ==========
+
+    #[test]
+    fn test_parse_tuple_without_parens() {
+        let result = parse_program("a = 1, 2, 3\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::Assign { target, value } = &stmts[0].0 {
+            assert!(matches!(target.0, Expr::Variable(_)));
+            if let Expr::Tuple(elements) = &value.0 {
+                assert_eq!(elements.len(), 3);
+            } else {
+                panic!("Expected tuple in RHS");
+            }
+        } else {
+            panic!("Expected assignment");
+        }
+    }
+
+    #[test]
+    fn test_parse_single_element_tuple() {
+        // 단일 요소 튜플은 trailing comma가 있어야 함
+        // 현재 구현에서는 1, 2개 이상의 요소가 있어야 튜플로 인식됨
+        // 단일 요소는 괄호를 사용해야 함: (1,)
+        let result = parse_program("a = (1,)\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        if let Stmt::Assign { value, .. } = &stmts[0].0 {
+            if let Expr::Tuple(elements) = &value.0 {
+                assert_eq!(elements.len(), 1);
+            } else {
+                panic!("Expected tuple");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_unpack_assignment() {
+        let result = parse_program("a, b, c = 1, 2, 3\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        if let Stmt::Assign { target, value } = &stmts[0].0 {
+            // LHS는 튜플 패턴
+            if let Expr::Tuple(targets) = &target.0 {
+                assert_eq!(targets.len(), 3);
+            } else {
+                panic!("Expected tuple pattern in LHS");
+            }
+            // RHS는 튜플
+            if let Expr::Tuple(values) = &value.0 {
+                assert_eq!(values.len(), 3);
+            } else {
+                panic!("Expected tuple in RHS");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_unpack_from_list() {
+        let result = parse_program("x, y, z = [1, 2, 3]\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        if let Stmt::Assign { target, value } = &stmts[0].0 {
+            if let Expr::Tuple(targets) = &target.0 {
+                assert_eq!(targets.len(), 3);
+            }
+            if let Expr::List(_) = &value.0 {
+                // OK
+            } else {
+                panic!("Expected list in RHS");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_unpack() {
+        let result = parse_program("a, (b, c) = 1, (2, 3)\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        if let Stmt::Assign { target, value } = &stmts[0].0 {
+            if let Expr::Tuple(targets) = &target.0 {
+                assert_eq!(targets.len(), 2);
+                // 두 번째 요소가 중첩 튜플인지 확인
+                if let Expr::Tuple(nested) = &targets[1].0 {
+                    assert_eq!(nested.len(), 2);
+                } else {
+                    panic!("Expected nested tuple");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_return_tuple() {
+        let result = parse_program("def foo():\n  return 1, 2, 3\n");
+        assert!(result.is_ok());
+        let stmts = result.unwrap();
+        if let Stmt::Def { body, .. } = &stmts[0].0 {
+            if let Stmt::Return(expr) = &body[0].0 {
+                if let Expr::Tuple(elements) = &expr.0 {
+                    assert_eq!(elements.len(), 3);
+                } else {
+                    panic!("Expected tuple in return");
+                }
+            }
+        }
     }
 }

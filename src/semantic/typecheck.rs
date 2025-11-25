@@ -101,42 +101,8 @@ fn tc_stmt(
         }
         Stmt::Assign { target, value } => {
             let rhs = tc_expr(value, tenv, ctx)?;
-            // target이 Variable이면 타입 추적, Attribute이면 검증만
-            match &target.0 {
-                Expr::Variable(name) => {
-                    let prev = tenv.get(name);
-                    let new_ty = match (prev, rhs) {
-                        (None, t) => t,
-                        (Some(Ty::Unknown), t) => t,
-                        (Some(t), Ty::Unknown) => t,
-                        (Some(a), b) if a == b => a,
-                        (Some(a), b) => {
-                            return Err(SemanticError {
-                                message: format!(
-                                    "TypeError: cannot assign value of type {:?} to variable of type {:?}",
-                                    b, a
-                                ),
-                                span: value.1.clone(),
-                            });
-                        }
-                    };
-                    tenv.set(name.clone(), new_ty);
-                }
-                Expr::Attribute { .. } => {
-                    // Attribute 할당은 타입 추적하지 않음
-                    let _ = tc_expr(target, tenv, ctx)?;
-                }
-                Expr::Index { .. } => {
-                    // Index 할당은 타입 추적하지 않음
-                    let _ = tc_expr(target, tenv, ctx)?;
-                }
-                _ => {
-                    return Err(SemanticError {
-                        message: "Invalid assignment target".to_string(),
-                        span: target.1.clone(),
-                    });
-                }
-            }
+            // 튜플 언패킹 지원
+            tc_assign_target(target, rhs, tenv, ctx)?;
             Ok(())
         }
         Stmt::Expr(expr) => {
@@ -266,6 +232,18 @@ fn tc_stmt(
                 Ty::List(elem_ty) => *elem_ty.clone(),
                 Ty::Dict(key_ty, _) => *key_ty.clone(),
                 Ty::String => Ty::String,
+                Ty::Tuple(elem_tys) => {
+                    // Tuple iteration: infer common type or Unknown if mixed
+                    if elem_tys.is_empty() {
+                        Ty::Unknown
+                    } else if elem_tys.iter().all(|t| t == &elem_tys[0]) {
+                        elem_tys[0].clone()
+                    } else {
+                        Ty::Unknown // Mixed types in tuple
+                    }
+                }
+                Ty::MapIter(elem_ty) => *elem_ty.clone(),
+                Ty::FilterIter(elem_ty) => *elem_ty.clone(),
                 Ty::Unknown => Ty::Unknown,
                 _ => {
                     return Err(SemanticError {
@@ -276,12 +254,10 @@ fn tc_stmt(
             };
 
             let mut loop_env = snapshot_env(tenv);
-            with_env(&mut loop_env, |e| {
-                e.set(var.clone(), loop_var_ty);
-                for s in body {
-                    let _ = tc_stmt(s, e, ctx, current_fn_return, true);
-                }
-            });
+            loop_env.set(var.clone(), loop_var_ty);
+            for s in body {
+                tc_stmt(s, &mut loop_env, ctx, current_fn_return, true)?;
+            }
             Ok(())
         }
         Stmt::Def {
@@ -302,6 +278,95 @@ fn tc_stmt(
             let _ = fn_return_ty; // currently unused for call-site checks
             Ok(())
         }
+    }
+}
+
+/// 할당 대상을 타입 체크하고 타입 환경을 업데이트합니다.
+/// 튜플 언패킹을 재귀적으로 지원합니다.
+fn tc_assign_target(
+    target: &ExprS,
+    rhs_ty: Ty,
+    tenv: &mut TypeEnv,
+    ctx: &super::ProgramContext,
+) -> SemanticResult<()> {
+    match &target.0 {
+        Expr::Variable(name) => {
+            let prev = tenv.get(name);
+            let new_ty = match (prev, rhs_ty) {
+                (None, t) => t,
+                (Some(Ty::Unknown), t) => t,
+                (Some(t), Ty::Unknown) => t,
+                (Some(a), b) if a == b => a,
+                (Some(a), b) => {
+                    return Err(SemanticError {
+                        message: format!(
+                            "TypeError: cannot assign value of type {:?} to variable of type {:?}",
+                            b, a
+                        ),
+                        span: target.1.clone(),
+                    });
+                }
+            };
+            tenv.set(name.clone(), new_ty);
+            Ok(())
+        }
+        Expr::Attribute { .. } => {
+            // Attribute 할당은 타입 추적하지 않음, 검증만
+            let _ = tc_expr(target, tenv, ctx)?;
+            Ok(())
+        }
+        Expr::Index { .. } => {
+            // Index 할당은 타입 추적하지 않음, 검증만
+            let _ = tc_expr(target, tenv, ctx)?;
+            Ok(())
+        }
+        Expr::Tuple(elements) => {
+            // 튜플 언패킹: RHS가 튜플 또는 리스트여야 함
+            match rhs_ty {
+                Ty::Tuple(elem_tys) => {
+                    if elements.len() != elem_tys.len() {
+                        return Err(SemanticError {
+                            message: format!(
+                                "TypeError: cannot unpack tuple of length {} into {} variables",
+                                elem_tys.len(),
+                                elements.len()
+                            ),
+                            span: target.1.clone(),
+                        });
+                    }
+                    // 각 요소를 재귀적으로 할당
+                    for (target_elem, elem_ty) in elements.iter().zip(elem_tys.iter()) {
+                        tc_assign_target(target_elem, elem_ty.clone(), tenv, ctx)?;
+                    }
+                    Ok(())
+                }
+                Ty::List(elem_ty) => {
+                    // 리스트 언패킹: 모든 요소가 같은 타입이라고 가정
+                    for target_elem in elements {
+                        tc_assign_target(target_elem, *elem_ty.clone(), tenv, ctx)?;
+                    }
+                    Ok(())
+                }
+                Ty::Unknown => {
+                    // Unknown 타입인 경우 각 요소를 Unknown으로 할당
+                    for target_elem in elements {
+                        tc_assign_target(target_elem, Ty::Unknown, tenv, ctx)?;
+                    }
+                    Ok(())
+                }
+                _ => Err(SemanticError {
+                    message: format!(
+                        "TypeError: cannot unpack non-iterable type {:?}",
+                        rhs_ty
+                    ),
+                    span: target.1.clone(),
+                }),
+            }
+        }
+        _ => Err(SemanticError {
+            message: "Invalid assignment target".to_string(),
+            span: target.1.clone(),
+        }),
     }
 }
 
@@ -478,7 +543,9 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                         "len" => {
                             let arg_ty = tc_expr(&args[0], tenv, ctx)?;
                             return match arg_ty {
-                                Ty::String | Ty::List(_) | Ty::Dict(_, _) => Ok(Ty::Int),
+                                Ty::String | Ty::List(_) | Ty::Dict(_, _) | Ty::Tuple(_) => {
+                                    Ok(Ty::Int)
+                                }
                                 Ty::Unknown => Ok(Ty::Int),
                                 _ => Err(SemanticError {
                                     message: format!(
@@ -510,6 +577,77 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                         "assert" => {
                             let _ = tc_expr(&args[0], tenv, ctx)?;
                             return Ok(Ty::NoneType);
+                        }
+                        "map" => {
+                            // map(function, iterable) -> MapIter[T]
+                            // First arg should be a function/lambda
+                            let func_ty = tc_expr(&args[0], tenv, ctx)?;
+                            if func_ty != Ty::Function && func_ty != Ty::Unknown {
+                                return Err(SemanticError {
+                                    message: format!(
+                                        "TypeError: map() argument 1 must be callable, got {:?}",
+                                        func_ty
+                                    ),
+                                    span: args[0].1.clone(),
+                                });
+                            }
+                            // Second arg should be iterable
+                            let iter_ty = tc_expr(&args[1], tenv, ctx)?;
+                            let elem_ty = match iter_ty {
+                                Ty::List(t) => *t,
+                                Ty::Range => Ty::Int,
+                                Ty::String => Ty::String,
+                                Ty::MapIter(t) => *t,
+                                Ty::FilterIter(t) => *t,
+                                Ty::Unknown => Ty::Unknown,
+                                _ => {
+                                    return Err(SemanticError {
+                                        message: format!(
+                                            "TypeError: map() argument 2 must be iterable, got {:?}",
+                                            iter_ty
+                                        ),
+                                        span: args[1].1.clone(),
+                                    });
+                                }
+                            };
+                            // map output type is Unknown since we can't infer lambda return type easily
+                            let _ = elem_ty; // We could use this for better inference in the future
+                            return Ok(Ty::MapIter(Box::new(Ty::Unknown)));
+                        }
+                        "filter" => {
+                            // filter(function, iterable) -> FilterIter[T]
+                            // First arg should be a function/lambda
+                            let func_ty = tc_expr(&args[0], tenv, ctx)?;
+                            if func_ty != Ty::Function && func_ty != Ty::Unknown {
+                                return Err(SemanticError {
+                                    message: format!(
+                                        "TypeError: filter() argument 1 must be callable, got {:?}",
+                                        func_ty
+                                    ),
+                                    span: args[0].1.clone(),
+                                });
+                            }
+                            // Second arg should be iterable
+                            let iter_ty = tc_expr(&args[1], tenv, ctx)?;
+                            let elem_ty = match iter_ty {
+                                Ty::List(t) => *t,
+                                Ty::Range => Ty::Int,
+                                Ty::String => Ty::String,
+                                Ty::MapIter(t) => *t,
+                                Ty::FilterIter(t) => *t,
+                                Ty::Unknown => Ty::Unknown,
+                                _ => {
+                                    return Err(SemanticError {
+                                        message: format!(
+                                            "TypeError: filter() argument 2 must be iterable, got {:?}",
+                                            iter_ty
+                                        ),
+                                        span: args[1].1.clone(),
+                                    });
+                                }
+                            };
+                            // filter preserves element type
+                            return Ok(Ty::FilterIter(Box::new(elem_ty)));
                         }
                         _ => {
                             // Generic fallback: type-check all arguments
@@ -592,6 +730,14 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
             }
             Ok(Ty::Dict(Box::new(key_ty), Box::new(val_ty)))
         }
+        Expr::Tuple(elements) => {
+            let mut elem_tys = Vec::new();
+            for elem in elements {
+                let ty = tc_expr(elem, tenv, ctx)?;
+                elem_tys.push(ty);
+            }
+            Ok(Ty::Tuple(elem_tys))
+        }
         Expr::Index { object, index } => {
             let obj_ty = tc_expr(object, tenv, ctx)?;
             let idx_ty = tc_expr(index, tenv, ctx)?;
@@ -619,6 +765,27 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
                         });
                     }
                     Ok(*val_ty)
+                }
+                Ty::Tuple(elem_tys) => {
+                    if idx_ty != Ty::Int && idx_ty != Ty::Unknown {
+                        return Err(SemanticError {
+                            message: format!(
+                                "TypeError: tuple indices must be integers, not {:?}",
+                                idx_ty
+                            ),
+                            span: index.1.clone(),
+                        });
+                    }
+                    // For tuple indexing, we can't know the exact type at compile time
+                    // unless the index is a literal. Return Unknown for now.
+                    // A more sophisticated implementation could track literal indices.
+                    if elem_tys.is_empty() {
+                        Ok(Ty::Unknown)
+                    } else if elem_tys.iter().all(|t| t == &elem_tys[0]) {
+                        Ok(elem_tys[0].clone())
+                    } else {
+                        Ok(Ty::Unknown)
+                    }
                 }
                 Ty::String => {
                     if idx_ty != Ty::Int && idx_ty != Ty::Unknown {

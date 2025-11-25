@@ -87,6 +87,7 @@ fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt:
         I::None => write!(w, "{}", ins_name),
 
         I::Pop => write!(w, "{}", ins_name),
+        I::Dup => write!(w, "{}", ins_name),
 
         I::LoadLocal(idx) => write!(w, "{} {}", ins_name, idx),
         I::StoreLocal(idx) => write!(w, "{} {}", ins_name, idx),
@@ -150,6 +151,7 @@ fn disassemble_instruction(module: &Module, ins: &I, w: &mut impl Write) -> fmt:
         }
 
         I::BuildList(count) => write!(w, "{} (count={})", ins_name, count),
+        I::BuildTuple(count) => write!(w, "{} (count={})", ins_name, count),
         I::BuildDict(count) => write!(w, "{} (count={})", ins_name, count),
         I::LoadIndex => write!(w, "{}", ins_name),
         I::StoreIndex => write!(w, "{}", ins_name),

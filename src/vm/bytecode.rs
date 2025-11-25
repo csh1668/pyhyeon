@@ -65,6 +65,9 @@ pub enum Instruction {
 
     // stack operations
     Pop,
+    /// 스택 top 값을 복제
+    /// Stack: value → value, value
+    Dup,
 
     // locals/globals
     LoadLocal(u16),
@@ -120,6 +123,10 @@ pub enum Instruction {
     /// 리스트 생성: 스택에서 n개의 값을 꺼내 리스트 생성
     /// Stack: val1, val2, ..., valn → list
     BuildList(u16 /* count */),
+
+    /// 튜플 생성: 스택에서 n개의 값을 꺼내 튜플 생성
+    /// Stack: val1, val2, ..., valn → tuple
+    BuildTuple(u16 /* count */),
 
     /// 딕셔너리 생성: 스택에서 2n개의 값을 꺼내 딕셔너리 생성
     /// Stack: key1, val1, key2, val2, ..., keyn, valn → dict
