@@ -5,7 +5,7 @@
 //! 3. **속성 지연 할당**: 필요한 경우에만 `attributes` HashMap 할당 (메모리 최적화)
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, BTreeSet};
 use std::rc::Rc;
 
 use crate::builtins::BuiltinClassType;
@@ -88,6 +88,16 @@ pub enum ObjectData {
         map: RefCell<HashMap<DictKey, crate::vm::bytecode::Value>>,
     },
 
+    /// Set (mutable, HashSet)
+    Set {
+        items: RefCell<HashSet<SetKey>>,
+    },
+
+    /// TreeSet (mutable, BTreeSet)
+    TreeSet {
+        items: RefCell<BTreeSet<SetKey>>,
+    },
+
     /// 사용자 정의 클래스
     UserClass {
         class_id: u16,
@@ -126,6 +136,15 @@ pub enum DictKey {
     Bool(bool),
 }
 
+/// Set key wrapper (hashable and orderable types)
+/// Used for both HashSet and BTreeSet
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub enum SetKey {
+    Int(i64),
+    String(String),
+    Bool(bool),
+}
+
 #[derive(Debug, Clone)]
 pub enum BuiltinInstanceData {
     /// Range iterator 상태
@@ -159,6 +178,18 @@ pub enum BuiltinInstanceData {
         source_iter: Box<crate::vm::bytecode::Value>,
         /// 미리 찾아둔 다음 값 (peek buffer)
         peeked: std::cell::RefCell<Option<crate::vm::bytecode::Value>>,
+    },
+
+    /// Set iterator 상태
+    SetIterator {
+        keys: Vec<SetKey>,
+        current: RefCell<usize>,
+    },
+
+    /// TreeSet iterator 상태
+    TreeSetIterator {
+        keys: Vec<SetKey>,
+        current: RefCell<usize>,
     },
 }
 

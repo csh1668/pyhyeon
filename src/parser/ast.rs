@@ -61,6 +61,8 @@ pub enum Expr {
     List(Vec<ExprS>),
     Dict(Vec<(ExprS, ExprS)>),
     Tuple(Vec<ExprS>),
+    Set(Vec<ExprS>),
+    TreeSet(Vec<ExprS>),
     Index {
         object: Box<ExprS>,
         index: Box<ExprS>,

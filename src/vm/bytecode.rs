@@ -132,6 +132,14 @@ pub enum Instruction {
     /// Stack: key1, val1, key2, val2, ..., keyn, valn → dict
     BuildDict(u16 /* pair_count */),
 
+    /// Set 생성: 스택에서 n개의 값을 꺼내 Set 생성
+    /// Stack: val1, val2, ..., valn → set
+    BuildSet(u16 /* count */),
+
+    /// TreeSet 생성: 스택에서 n개의 값을 꺼내 TreeSet 생성
+    /// Stack: val1, val2, ..., valn → treeset
+    BuildTreeSet(u16 /* count */),
+
     /// 인덱스 로드: obj[idx]
     /// Stack: object, index → value
     LoadIndex,

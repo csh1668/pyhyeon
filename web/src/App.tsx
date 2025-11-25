@@ -26,6 +26,44 @@ interface Example {
 }
 
 function App() {
+  const defaultCode = 
+`
+# Welcome to Pyhyeon!
+print("=== IO Test ===")
+for e in map(lambda x: int(x), input("Enter numbers separated by spaces: ").split()):
+  print(e)
+
+print("=== Set Test ===")
+s = {3, 1, 5}
+print(s)
+print(s.contains(3)) # True
+ts = t{3, 1, 5}
+print(ts)
+print(ts.lower_bound(2)) # 3
+print(ts.max()) # 5
+
+print("=== Class Test ===")
+class Person:
+  def __init__(self, name, age):
+    self.name = name
+    self.age = age
+  def do(self):
+    print("Your name is " + self.name + " and you are " + str(self.age) + " years old.")
+
+p = Person("John", 20)
+p.do(); print(p.name)
+
+print("=== Filter Test ===")
+nums = range(10)
+for even in filter(lambda x: x % 2 == 0, nums):
+  print(even)
+
+print("=== Map Test ===")
+nums = range(10)
+for double in map(lambda x: x * 2, nums):
+  print(double)
+`;
+
   const editorRef = useRef<HTMLDivElement>(null)
   const analyzeTimeoutRef = useRef<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -358,7 +396,7 @@ function App() {
       const mobile = window.innerWidth < 768
       
       instance = monaco.editor.create(editorRef.current!, {
-        value: '# Welcome to Pyhyeon!\n\n# Lists\nnums = [1, 2, 3, 4, 5]\nfor n in nums:\n  print(n)\n\n# Dicts\nperson = {"name": "Alice", "age": 30}\nprint(person["name"])\n',
+        value: defaultCode,
         language: 'pyh',
         theme: 'pyhyeon-dark',
         automaticLayout: true,

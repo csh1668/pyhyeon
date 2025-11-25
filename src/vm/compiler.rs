@@ -581,6 +581,22 @@ impl Compiler {
                 // BuildTuple instruction
                 fun.code.push(I::BuildTuple(elements.len() as u16));
             }
+            Expr::Set(elements) => {
+                // 각 요소를 스택에 push
+                for elem in elements {
+                    self.emit_expr(elem, fun, locals);
+                }
+                // BuildSet instruction
+                fun.code.push(I::BuildSet(elements.len() as u16));
+            }
+            Expr::TreeSet(elements) => {
+                // 각 요소를 스택에 push
+                for elem in elements {
+                    self.emit_expr(elem, fun, locals);
+                }
+                // BuildTreeSet instruction
+                fun.code.push(I::BuildTreeSet(elements.len() as u16));
+            }
             Expr::Index { object, index } => {
                 // object와 index를 스택에 push
                 self.emit_expr(object, fun, locals);
@@ -909,6 +925,16 @@ fn collect_referenced_vars(expr: &ExprS, vars: &mut HashSet<String>) {
             }
         }
         Expr::Tuple(elements) => {
+            for elem in elements {
+                collect_referenced_vars(elem, vars);
+            }
+        }
+        Expr::Set(elements) => {
+            for elem in elements {
+                collect_referenced_vars(elem, vars);
+            }
+        }
+        Expr::TreeSet(elements) => {
             for elem in elements {
                 collect_referenced_vars(elem, vars);
             }

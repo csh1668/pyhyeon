@@ -72,17 +72,45 @@ where
             .labelled("list literal")
             .boxed();
 
-        // Dict literal: {key: value, key: value, ...}
-        let dict_literal = expr
-            .clone()
-            .then_ignore(just(Token::Colon))
-            .then(expr.clone())
-            .separated_by(just(Token::Comma))
-            .allow_trailing()
-            .collect()
-            .delimited_by(just(Token::LBrace), just(Token::RBrace))
-            .map(Expr::Dict)
-            .labelled("dict literal")
+        // TreeSet literal: t{expr, expr, ...}
+        let treeset_literal = just(Token::Identifier("t".to_string()))
+            .ignore_then(
+                expr.clone()
+                    .separated_by(just(Token::Comma))
+                    .allow_trailing()
+                    .collect()
+                    .delimited_by(just(Token::LBrace), just(Token::RBrace))
+                    .map(Expr::TreeSet)
+            )
+            .labelled("treeset literal")
+            .boxed();
+
+        // Set literal: {expr, expr, ...} (no colon)
+        // Dict literal: {key: value, key: value, ...} (has colon)
+        // Empty {} is treated as Dict
+        let set_or_dict_literal = just(Token::LBrace)
+            .ignore_then(
+                // Empty dict: {}
+                just(Token::RBrace)
+                    .to(Expr::Dict(vec![]))
+                    // Dict with key:value pairs
+                    .or(expr.clone()
+                        .then_ignore(just(Token::Colon))
+                        .then(expr.clone())
+                        .separated_by(just(Token::Comma))
+                        .allow_trailing()
+                        .collect::<Vec<_>>()
+                        .then_ignore(just(Token::RBrace))
+                        .map(Expr::Dict))
+                    // Set with values (no colon)
+                    .or(expr.clone()
+                        .separated_by(just(Token::Comma))
+                        .allow_trailing()
+                        .collect::<Vec<_>>()
+                        .then_ignore(just(Token::RBrace))
+                        .map(Expr::Set))
+            )
+            .labelled("set or dict literal")
             .boxed();
 
         // Tuple literal: (expr,) or (expr, expr, ...) - must have comma to distinguish from grouping
@@ -130,7 +158,8 @@ where
             }
             .labelled("literal"),
             list_literal,
-            dict_literal,
+            treeset_literal,
+            set_or_dict_literal,
             // Tuple or parenthesized expression
             tuple_literal.map(|(elements, is_tuple)| {
                 if is_tuple {

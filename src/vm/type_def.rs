@@ -155,6 +155,36 @@ pub enum NativeMethod {
     FilterIter,
     FilterHasNext,
     FilterNext,
+
+    // ========== Set 메서드들 ==========
+    SetAdd,
+    SetRemove,
+    SetContains,
+    SetUnion,
+    SetIntersection,
+    SetDifference,
+    SetClear,
+    SetCopy,
+    SetIter,
+    SetHasNext,
+    SetNext,
+
+    // ========== TreeSet 메서드들 ==========
+    TreeSetAdd,
+    TreeSetRemove,
+    TreeSetContains,
+    TreeSetUnion,
+    TreeSetIntersection,
+    TreeSetDifference,
+    TreeSetClear,
+    TreeSetCopy,
+    TreeSetLowerBound,
+    TreeSetUpperBound,
+    TreeSetMin,
+    TreeSetMax,
+    TreeSetIter,
+    TreeSetHasNext,
+    TreeSetNext,
 }
 
 impl NativeMethod {
@@ -256,6 +286,36 @@ impl NativeMethod {
             Self::FilterIter => "__iter__",
             Self::FilterHasNext => "__has_next__",
             Self::FilterNext => "__next__",
+
+            // Set 메서드
+            Self::SetAdd => "add",
+            Self::SetRemove => "remove",
+            Self::SetContains => "contains",
+            Self::SetUnion => "union",
+            Self::SetIntersection => "intersection",
+            Self::SetDifference => "difference",
+            Self::SetClear => "clear",
+            Self::SetCopy => "copy",
+            Self::SetIter => "__iter__",
+            Self::SetHasNext => "__has_next__",
+            Self::SetNext => "__next__",
+
+            // TreeSet 메서드
+            Self::TreeSetAdd => "add",
+            Self::TreeSetRemove => "remove",
+            Self::TreeSetContains => "contains",
+            Self::TreeSetUnion => "union",
+            Self::TreeSetIntersection => "intersection",
+            Self::TreeSetDifference => "difference",
+            Self::TreeSetClear => "clear",
+            Self::TreeSetCopy => "copy",
+            Self::TreeSetLowerBound => "lower_bound",
+            Self::TreeSetUpperBound => "upper_bound",
+            Self::TreeSetMin => "min",
+            Self::TreeSetMax => "max",
+            Self::TreeSetIter => "__iter__",
+            Self::TreeSetHasNext => "__has_next__",
+            Self::TreeSetNext => "__next__",
         }
     }
 }
@@ -295,7 +355,7 @@ impl Arity {
 // 빌트인 타입 ID는 crate::builtins에 정의되어 있음
 pub use crate::builtins::{
     BuiltinClassType, TYPE_BOOL, TYPE_DICT, TYPE_FLOAT, TYPE_FUNCTION, TYPE_INT, TYPE_LIST,
-    TYPE_NONE, TYPE_RANGE, TYPE_STR,
+    TYPE_NONE, TYPE_RANGE, TYPE_SET, TYPE_STR, TYPE_TREESET,
 };
 
 // 사용자 정의 타입 시작 ID (100+)
@@ -885,6 +945,196 @@ pub fn init_builtin_types() -> Vec<TypeDef> {
                 "__next__",
                 MethodImpl::Native {
                     func: NativeMethod::FilterNext,
+                    arity: Arity::Exact(0),
+                },
+            ),
+        ]),
+        // TYPE_TUPLE (11)
+        TypeDef::new("tuple", TypeFlags::IMMUTABLE | TypeFlags::ITERABLE),
+        // TYPE_SET (12)
+        TypeDef::new("set", TypeFlags::ITERABLE).with_methods(vec![
+            (
+                "add",
+                MethodImpl::Native {
+                    func: NativeMethod::SetAdd,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "remove",
+                MethodImpl::Native {
+                    func: NativeMethod::SetRemove,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "contains",
+                MethodImpl::Native {
+                    func: NativeMethod::SetContains,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "union",
+                MethodImpl::Native {
+                    func: NativeMethod::SetUnion,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "intersection",
+                MethodImpl::Native {
+                    func: NativeMethod::SetIntersection,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "difference",
+                MethodImpl::Native {
+                    func: NativeMethod::SetDifference,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "clear",
+                MethodImpl::Native {
+                    func: NativeMethod::SetClear,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "copy",
+                MethodImpl::Native {
+                    func: NativeMethod::SetCopy,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__iter__",
+                MethodImpl::Native {
+                    func: NativeMethod::SetIter,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__has_next__",
+                MethodImpl::Native {
+                    func: NativeMethod::SetHasNext,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__next__",
+                MethodImpl::Native {
+                    func: NativeMethod::SetNext,
+                    arity: Arity::Exact(0),
+                },
+            ),
+        ]),
+        // TYPE_TREESET (13)
+        TypeDef::new("treeset", TypeFlags::ITERABLE).with_methods(vec![
+            (
+                "add",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetAdd,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "remove",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetRemove,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "contains",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetContains,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "union",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetUnion,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "intersection",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetIntersection,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "difference",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetDifference,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "clear",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetClear,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "copy",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetCopy,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "lower_bound",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetLowerBound,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "upper_bound",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetUpperBound,
+                    arity: Arity::Exact(1),
+                },
+            ),
+            (
+                "min",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetMin,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "max",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetMax,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__iter__",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetIter,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__has_next__",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetHasNext,
+                    arity: Arity::Exact(0),
+                },
+            ),
+            (
+                "__next__",
+                MethodImpl::Native {
+                    func: NativeMethod::TreeSetNext,
                     arity: Arity::Exact(0),
                 },
             ),

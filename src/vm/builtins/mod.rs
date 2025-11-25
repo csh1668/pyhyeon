@@ -13,8 +13,12 @@ pub mod map;
 pub mod none;
 pub mod print;
 pub mod range;
+pub mod set;
+pub mod set_methods;
 pub mod str;
 pub mod str_methods;
+pub mod treeset;
+pub mod treeset_methods;
 
 #[cfg(test)]
 mod tests;
@@ -25,7 +29,7 @@ use super::{VmError, VmErrorKind, VmResult, err};
 use crate::builtins::{
     BUILTIN_ASSERT_ID, BUILTIN_BOOL_ID, BUILTIN_DICT_ID, BUILTIN_FILTER_ID, BUILTIN_FLOAT_ID,
     BUILTIN_INPUT_ID, BUILTIN_INT_ID, BUILTIN_LEN_ID, BUILTIN_LIST_ID, BUILTIN_MAP_ID,
-    BUILTIN_PRINT_ID, BUILTIN_RANGE_ID, BUILTIN_STR_ID,
+    BUILTIN_PRINT_ID, BUILTIN_RANGE_ID, BUILTIN_SET_ID, BUILTIN_STR_ID, BUILTIN_TREESET_ID,
 };
 use crate::runtime_io::RuntimeIo;
 
@@ -43,6 +47,8 @@ pub fn call_builtin<IO: RuntimeIo>(id: u8, args: Vec<Value>, io: &mut IO) -> VmR
         BUILTIN_FLOAT_ID => float::call(args),
         BUILTIN_MAP_ID => map::create_map(args),
         BUILTIN_FILTER_ID => filter::create_filter(args),
+        BUILTIN_SET_ID => set::call(args),
+        BUILTIN_TREESET_ID => treeset::call(args),
         // TODO: list()와 dict() 생성자는 나중에 구현
         // BUILTIN_LIST_ID => list::call(args),
         // BUILTIN_DICT_ID => dict::call(args),

@@ -14,6 +14,8 @@ pub const BUILTIN_DICT_ID: u8 = 9;
 pub const BUILTIN_ASSERT_ID: u8 = 10;
 pub const BUILTIN_MAP_ID: u8 = 11;
 pub const BUILTIN_FILTER_ID: u8 = 12;
+pub const BUILTIN_SET_ID: u8 = 13;
+pub const BUILTIN_TREESET_ID: u8 = 14;
 
 // ========== 빌트인 타입 ID ==========
 // 0-99는 builtin 타입, 100+는 사용자 정의 타입 (TYPE_USER_START는 type_def.rs에 정의)
@@ -29,6 +31,8 @@ pub const TYPE_FUNCTION: u16 = 8;
 pub const TYPE_MAP_ITER: u16 = 9;
 pub const TYPE_FILTER_ITER: u16 = 10;
 pub const TYPE_TUPLE: u16 = 11;
+pub const TYPE_SET: u16 = 12;
+pub const TYPE_TREESET: u16 = 13;
 
 // ========== 빌트인 클래스 타입 ==========
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -45,8 +49,10 @@ pub enum BuiltinClassType {
     MapIter,
     /// `filter(function, iterable)` 타입
     FilterIter,
-    // 미래 확장:
-    // Set,    // `{1, 2, 3}`
+    /// `{1, 2, 3}` 타입 (HashSet)
+    Set,
+    /// `t{1, 2, 3}` 타입 (BTreeSet)
+    TreeSet,
 }
 
 impl BuiltinClassType {
@@ -59,6 +65,8 @@ impl BuiltinClassType {
             Self::Tuple => "tuple",
             Self::MapIter => "map_iter",
             Self::FilterIter => "filter_iter",
+            Self::Set => "set",
+            Self::TreeSet => "treeset",
         }
     }
 }
@@ -142,6 +150,18 @@ const FILTER: BuiltinFunction = BuiltinFunction {
     builtin_id: BUILTIN_FILTER_ID,
 };
 
+const SET: BuiltinFunction = BuiltinFunction {
+    name: "set",
+    arity: Arity::Range(0, 1), // set() or set(iterable)
+    builtin_id: BUILTIN_SET_ID,
+};
+
+const TREESET: BuiltinFunction = BuiltinFunction {
+    name: "treeset",
+    arity: Arity::Range(0, 1), // treeset() or treeset(iterable)
+    builtin_id: BUILTIN_TREESET_ID,
+};
+
 // TODO: Uncomment when list() and dict() constructors are implemented
 // const LIST: Builtin = Builtin {
 //     name: "list",
@@ -155,7 +175,7 @@ const FILTER: BuiltinFunction = BuiltinFunction {
 //     builtin_id: BUILTIN_DICT_ID,
 // };
 
-static REGISTRY: &[BuiltinFunction] = &[PRINT, INPUT, INT, BOOL, STR, LEN, RANGE, FLOAT, ASSERT, MAP, FILTER];
+static REGISTRY: &[BuiltinFunction] = &[PRINT, INPUT, INT, BOOL, STR, LEN, RANGE, FLOAT, ASSERT, MAP, FILTER, SET, TREESET];
 // TODO: Add LIST and DICT to registry when implemented
 // static REGISTRY: &[Builtin] = &[PRINT, INPUT, INT, BOOL, STR, LEN, RANGE, FLOAT, LIST, DICT, ASSERT];
 

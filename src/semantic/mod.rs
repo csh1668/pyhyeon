@@ -199,7 +199,7 @@ fn validate_and_analyze_assign_target(
             }
             Ok(())
         }
-        Expr::Literal(_) | Expr::Call { .. } | Expr::Binary { .. } | Expr::Unary { .. } | Expr::Lambda { .. } | Expr::List(_) | Expr::Dict(_) => {
+        Expr::Literal(_) | Expr::Call { .. } | Expr::Binary { .. } | Expr::Unary { .. } | Expr::Lambda { .. } | Expr::List(_) | Expr::Dict(_) | Expr::Set(_) | Expr::TreeSet(_) => {
             Err(SemanticError {
                 message: "Invalid assignment target: cannot assign to literal, call, or expression".to_string(),
                 span: target.1.clone(),
@@ -235,7 +235,7 @@ fn validate_and_analyze_assign_target_function(
             }
             Ok(())
         }
-        Expr::Literal(_) | Expr::Call { .. } | Expr::Binary { .. } | Expr::Unary { .. } | Expr::Lambda { .. } | Expr::List(_) | Expr::Dict(_) => {
+        Expr::Literal(_) | Expr::Call { .. } | Expr::Binary { .. } | Expr::Unary { .. } | Expr::Lambda { .. } | Expr::List(_) | Expr::Dict(_) | Expr::Set(_) | Expr::TreeSet(_) => {
             Err(SemanticError {
                 message: "Invalid assignment target: cannot assign to literal, call, or expression".to_string(),
                 span: target.1.clone(),
@@ -301,6 +301,18 @@ fn analyze_expr_module(
             Ok(())
         }
         Expr::Tuple(elements) => {
+            for elem in elements {
+                analyze_expr_module(elem, scopes, ctx)?;
+            }
+            Ok(())
+        }
+        Expr::Set(elements) => {
+            for elem in elements {
+                analyze_expr_module(elem, scopes, ctx)?;
+            }
+            Ok(())
+        }
+        Expr::TreeSet(elements) => {
             for elem in elements {
                 analyze_expr_module(elem, scopes, ctx)?;
             }
@@ -464,6 +476,16 @@ fn collect_free_vars(expr: &ExprS, params: &Vec<String>, free_vars: &mut HashSet
             }
         }
         Expr::Tuple(elements) => {
+            for elem in elements {
+                collect_free_vars(elem, params, free_vars);
+            }
+        }
+        Expr::Set(elements) => {
+            for elem in elements {
+                collect_free_vars(elem, params, free_vars);
+            }
+        }
+        Expr::TreeSet(elements) => {
             for elem in elements {
                 collect_free_vars(elem, params, free_vars);
             }
@@ -660,6 +682,18 @@ fn analyze_expr_function(
             Ok(())
         }
         Expr::Tuple(elements) => {
+            for elem in elements {
+                analyze_expr_function(elem, scopes, ctx, locals, assigned)?;
+            }
+            Ok(())
+        }
+        Expr::Set(elements) => {
+            for elem in elements {
+                analyze_expr_function(elem, scopes, ctx, locals, assigned)?;
+            }
+            Ok(())
+        }
+        Expr::TreeSet(elements) => {
             for elem in elements {
                 analyze_expr_function(elem, scopes, ctx, locals, assigned)?;
             }

@@ -738,6 +738,20 @@ fn tc_expr(expr: &ExprS, tenv: &mut TypeEnv, ctx: &super::ProgramContext) -> Sem
             }
             Ok(Ty::Tuple(elem_tys))
         }
+        Expr::Set(elements) => {
+            // Set의 모든 원소는 같은 타입이어야 함 (간단한 타입 체크)
+            for elem in elements {
+                tc_expr(elem, tenv, ctx)?;
+            }
+            Ok(Ty::Unknown) // Set 타입은 아직 Ty enum에 없음
+        }
+        Expr::TreeSet(elements) => {
+            // TreeSet의 모든 원소는 같은 타입이어야 함
+            for elem in elements {
+                tc_expr(elem, tenv, ctx)?;
+            }
+            Ok(Ty::Unknown) // TreeSet 타입은 아직 Ty enum에 없음
+        }
         Expr::Index { object, index } => {
             let obj_ty = tc_expr(object, tenv, ctx)?;
             let idx_ty = tc_expr(index, tenv, ctx)?;

@@ -4,9 +4,9 @@
 
 use super::bytecode::Value;
 use super::type_def::TYPE_USER_START;
-use super::value::{BuiltinInstanceData, DictKey, Object, ObjectData};
+use super::value::{BuiltinInstanceData, DictKey, Object, ObjectData, SetKey};
 use super::{VmError, VmErrorKind, VmResult, err};
-use crate::builtins::{BuiltinClassType, TYPE_DICT, TYPE_FILTER_ITER, TYPE_LIST, TYPE_MAP_ITER, TYPE_RANGE, TYPE_STR, TYPE_TUPLE};
+use crate::builtins::{BuiltinClassType, TYPE_DICT, TYPE_FILTER_ITER, TYPE_LIST, TYPE_MAP_ITER, TYPE_RANGE, TYPE_SET, TYPE_STR, TYPE_TREESET, TYPE_TUPLE};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -59,6 +59,16 @@ pub fn display_value(v: &Value) -> String {
                     .collect();
                 format!("{{{}}}", contents.join(", "))
             }
+            ObjectData::Set { items } => {
+                let items_ref = items.borrow();
+                let contents: Vec<String> = items_ref.iter().map(|k| display_set_key(k)).collect();
+                format!("{{{}}}", contents.join(", "))
+            }
+            ObjectData::TreeSet { items } => {
+                let items_ref = items.borrow();
+                let contents: Vec<String> = items_ref.iter().map(|k| display_set_key(k)).collect();
+                format!("t{{{}}}", contents.join(", "))
+            }
             ObjectData::UserClass { class_id, .. } => format!("<class user_{}>", class_id),
             ObjectData::UserInstance { class_id } => {
                 format!("<instance of user_{}>", class_id)
@@ -98,6 +108,8 @@ pub fn type_name(v: &Value) -> &'static str {
             ObjectData::List { .. } => "list",
             ObjectData::Tuple { .. } => "tuple",
             ObjectData::Dict { .. } => "dict",
+            ObjectData::Set { .. } => "set",
+            ObjectData::TreeSet { .. } => "treeset",
             ObjectData::UserClass { .. } => "type",
             ObjectData::UserInstance { .. } => "instance",
             ObjectData::BuiltinClass { .. } => "type",
@@ -180,6 +192,15 @@ pub fn make_dict(map: HashMap<DictKey, Value>) -> Value {
     )))
 }
 
+/// SetKey를 문자열로 표시
+fn display_set_key(key: &SetKey) -> String {
+    match key {
+        SetKey::Int(i) => i.to_string(),
+        SetKey::String(s) => format!("\"{}\"", s),
+        SetKey::Bool(b) => if *b { "True" } else { "False" }.to_string(),
+    }
+}
+
 /// 사용자 정의 클래스 객체 생성
 pub fn make_user_class(class_id: u16, methods: HashMap<String, u16>) -> Value {
     Value::Object(Rc::new(Object::new(
@@ -205,6 +226,8 @@ pub fn make_builtin_class(class_type: BuiltinClassType) -> Value {
         BuiltinClassType::Tuple => TYPE_TUPLE,
         BuiltinClassType::MapIter => TYPE_MAP_ITER,
         BuiltinClassType::FilterIter => TYPE_FILTER_ITER,
+        BuiltinClassType::Set => TYPE_SET,
+        BuiltinClassType::TreeSet => TYPE_TREESET,
     };
     Value::Object(Rc::new(Object::new(
         type_id,

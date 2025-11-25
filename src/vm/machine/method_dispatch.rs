@@ -264,7 +264,7 @@ impl Vm {
         module: &mut Module,
         io: &mut IO,
     ) -> VmResult<Value> {
-        use super::super::builtins::{dict_methods, filter, int, list_methods, map, range, str_methods};
+        use super::super::builtins::{dict_methods, filter, int, list_methods, map, range, set_methods, str_methods, treeset_methods};
         use super::super::type_def::NativeMethod as NM;
 
         // builtins 모듈에서 직접 호출
@@ -365,6 +365,36 @@ impl Vm {
             NM::FilterIter => filter::filter_iter(receiver, args),
             NM::FilterHasNext => filter::filter_has_next(receiver, args, module, self, io),
             NM::FilterNext => filter::filter_next(receiver, args, module, self, io),
+
+            // Set 메서드들
+            NM::SetAdd => set_methods::set_add(receiver, args),
+            NM::SetRemove => set_methods::set_remove(receiver, args),
+            NM::SetContains => set_methods::set_contains(receiver, args),
+            NM::SetUnion => set_methods::set_union(receiver, args),
+            NM::SetIntersection => set_methods::set_intersection(receiver, args),
+            NM::SetDifference => set_methods::set_difference(receiver, args),
+            NM::SetClear => set_methods::set_clear(receiver, args),
+            NM::SetCopy => set_methods::set_copy(receiver, args),
+            NM::SetIter => set_methods::set_iter(receiver, args),
+            NM::SetHasNext => set_methods::set_has_next(receiver, args),
+            NM::SetNext => set_methods::set_next(receiver, args),
+
+            // TreeSet 메서드들
+            NM::TreeSetAdd => treeset_methods::treeset_add(receiver, args),
+            NM::TreeSetRemove => treeset_methods::treeset_remove(receiver, args),
+            NM::TreeSetContains => treeset_methods::treeset_contains(receiver, args),
+            NM::TreeSetUnion => treeset_methods::treeset_union(receiver, args),
+            NM::TreeSetIntersection => treeset_methods::treeset_intersection(receiver, args),
+            NM::TreeSetDifference => treeset_methods::treeset_difference(receiver, args),
+            NM::TreeSetClear => treeset_methods::treeset_clear(receiver, args),
+            NM::TreeSetCopy => treeset_methods::treeset_copy(receiver, args),
+            NM::TreeSetLowerBound => treeset_methods::treeset_lower_bound(receiver, args),
+            NM::TreeSetUpperBound => treeset_methods::treeset_upper_bound(receiver, args),
+            NM::TreeSetMin => treeset_methods::treeset_min(receiver, args),
+            NM::TreeSetMax => treeset_methods::treeset_max(receiver, args),
+            NM::TreeSetIter => treeset_methods::treeset_iter(receiver, args),
+            NM::TreeSetHasNext => treeset_methods::treeset_has_next(receiver, args),
+            NM::TreeSetNext => treeset_methods::treeset_next(receiver, args),
         }
     }
 

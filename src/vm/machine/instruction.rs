@@ -82,6 +82,8 @@ impl Vm {
             I::BuildList(count) => self.handle_build_list(*count),
             I::BuildTuple(count) => self.handle_build_tuple(*count),
             I::BuildDict(count) => self.handle_build_dict(*count),
+            I::BuildSet(count) => self.handle_build_set(*count),
+            I::BuildTreeSet(count) => self.handle_build_treeset(*count),
             I::LoadIndex => self.handle_load_index(),
             I::StoreIndex => self.handle_store_index(),
 
@@ -1455,6 +1457,12 @@ impl Vm {
                                     format!("{} cannot be called directly", class_type.name()),
                                 ));
                             }
+                            BuiltinClassType::Set => {
+                                crate::vm::builtins::set::call(args)?
+                            }
+                            BuiltinClassType::TreeSet => {
+                                crate::vm::builtins::treeset::call(args)?
+                            }
                         };
                         self.push(result)?;
                     }
@@ -1670,6 +1678,100 @@ impl Vm {
         )));
 
         self.push(dict_obj)?;
+        Ok(ExecutionFlow::Continue)
+    }
+
+    fn handle_build_set(&mut self, count: u16) -> VmResult<ExecutionFlow> {
+        use crate::builtins::TYPE_SET;
+        use crate::vm::value::{Object, ObjectData, SetKey};
+        use std::cell::RefCell;
+        use std::collections::HashSet;
+        use std::rc::Rc;
+
+        let mut set = HashSet::new();
+        for _ in 0..count {
+            let value = self.pop()?;
+
+            // value를 SetKey로 변환
+            let set_key = match value {
+                Value::Int(i) => SetKey::Int(i),
+                Value::Bool(b) => SetKey::Bool(b),
+                Value::Object(ref obj) => {
+                    if let ObjectData::String(ref s) = obj.data {
+                        SetKey::String(s.clone())
+                    } else {
+                        return Err(err(
+                            VmErrorKind::TypeError("set element"),
+                            "Set elements must be int, bool, or str".to_string(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(err(
+                        VmErrorKind::TypeError("set element"),
+                        "Set elements must be int, bool, or str".to_string(),
+                    ));
+                }
+            };
+
+            set.insert(set_key);
+        }
+
+        let set_obj = Value::Object(Rc::new(Object::new(
+            TYPE_SET,
+            ObjectData::Set {
+                items: RefCell::new(set),
+            },
+        )));
+
+        self.push(set_obj)?;
+        Ok(ExecutionFlow::Continue)
+    }
+
+    fn handle_build_treeset(&mut self, count: u16) -> VmResult<ExecutionFlow> {
+        use crate::builtins::TYPE_TREESET;
+        use crate::vm::value::{Object, ObjectData, SetKey};
+        use std::cell::RefCell;
+        use std::collections::BTreeSet;
+        use std::rc::Rc;
+
+        let mut treeset = BTreeSet::new();
+        for _ in 0..count {
+            let value = self.pop()?;
+
+            // value를 SetKey로 변환
+            let set_key = match value {
+                Value::Int(i) => SetKey::Int(i),
+                Value::Bool(b) => SetKey::Bool(b),
+                Value::Object(ref obj) => {
+                    if let ObjectData::String(ref s) = obj.data {
+                        SetKey::String(s.clone())
+                    } else {
+                        return Err(err(
+                            VmErrorKind::TypeError("treeset element"),
+                            "TreeSet elements must be int, bool, or str".to_string(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(err(
+                        VmErrorKind::TypeError("treeset element"),
+                        "TreeSet elements must be int, bool, or str".to_string(),
+                    ));
+                }
+            };
+
+            treeset.insert(set_key);
+        }
+
+        let treeset_obj = Value::Object(Rc::new(Object::new(
+            TYPE_TREESET,
+            ObjectData::TreeSet {
+                items: RefCell::new(treeset),
+            },
+        )));
+
+        self.push(treeset_obj)?;
         Ok(ExecutionFlow::Continue)
     }
 
