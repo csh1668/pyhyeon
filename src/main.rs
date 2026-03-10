@@ -20,7 +20,7 @@ fn main() {
     let mut out_path: Option<String> = None;
     if !args.is_empty() {
         let first = &args[0];
-        if ["run", "compile", "exec", "repl", "disasm", "dism"].contains(&first.as_str()) {
+        if ["run", "compile", "exec", "repl", "disasm", "dism", "sa"].contains(&first.as_str()) {
             subcmd = first.clone();
             args.remove(0);
         }
@@ -142,6 +142,29 @@ fn main() {
         "exec" => {
             let module = lib::load_module(path).expect("failed to load module");
             lib::exec_vm_module(module);
+        }
+        "sa" => {
+            let program = match lib::parse_source(&src) {
+                Ok(p) => p,
+                Err(diagnostics) => {
+                    for diag in diagnostics {
+                        eprint!("{}", diag.format(path, &src, "Parsing failed", 3));
+                    }
+                    return;
+                }
+            };
+            if let Err(diag) = lib::analyze(&program) {
+                eprint!(
+                    "{}",
+                    diag.format(path, &src, "Semantic Analyzing Failed", 4)
+                );
+                return;
+            }
+            let module = lib::compile_to_module(&program);
+            let output = lib::standalone::generate_standalone(&src, path, &module);
+            let out = out_path.as_deref().unwrap_or("out.rs");
+            std::fs::write(out, output).expect("failed to write standalone output");
+            println!("wrote {}", out);
         }
         _ => {
             eprintln!("Unknown subcommand: {}", subcmd);

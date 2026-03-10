@@ -5,6 +5,7 @@ pub mod parser;
 pub mod repl;
 pub mod runtime_io;
 pub mod semantic;
+pub mod standalone;
 pub mod types;
 pub mod vm;
 

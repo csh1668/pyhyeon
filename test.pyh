@@ -1,1 +1,6 @@
-x = -99999999999999999999
+arr = []
+for x in map(lambda x: int(x), input().split()):
+  arr.append(x)
+x = arr[0]
+y = arr[1]
+print(x+y)
